@@ -1058,6 +1058,28 @@ button {
   background: #fff;
 }
 
+.preview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 440px;
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+
+/* 让 Sandpack 真实渲染器填满预览区 */
+.preview-body .sp-wrapper,
+.preview-body .sp-stack {
+  height: 100%;
+}
+
+.preview-body .sp-preview-container,
+.preview-body .sp-preview-iframe {
+  height: 100%;
+  background: #fff;
+}
+
 /* Empty state */
 .empty-state {
   min-height: 280px;

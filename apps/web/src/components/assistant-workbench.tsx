@@ -6,6 +6,7 @@ import type {
   EvidenceRef,
   LogicAnswer,
   LogicFact,
+  PreviewBundle,
   ProjectConfig
 } from "@frontend-logic/shared";
 import {
@@ -25,6 +26,16 @@ import {
   Zap
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import dynamic from "next/dynamic";
+
+// Sandpack 较重且依赖浏览器环境，仅在客户端动态加载
+const PreviewSandbox = dynamic(
+  () => import("./sandpack-preview").then((mod) => mod.PreviewSandbox),
+  {
+    ssr: false,
+    loading: () => <div className="preview-loading">正在加载渲染器…</div>
+  }
+);
 
 type IndexStatus = {
   generatedAt?: string;
@@ -60,6 +71,9 @@ export function AssistantWorkbench() {
   const [indexing, setIndexing] = useState(false);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState("");
+  const [previewBundle, setPreviewBundle] = useState<PreviewBundle | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === projectId),
@@ -129,6 +143,43 @@ export function AssistantWorkbench() {
       setIndexing(false);
     }
   }
+
+  // answer 到达后，请求 /api/preview-bundle 并用 Sandpack 真实渲染对应组件
+  useEffect(() => {
+    if (!answer || !projectId) {
+      setPreviewBundle(null);
+      setPreviewError("");
+      setPreviewLoading(false);
+      return;
+    }
+    const entry =
+      answer.relatedFiles.find((file) => /\.(jsx|tsx)$/.test(file)) ?? answer.relatedFiles[0];
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewError("");
+    setPreviewBundle(null);
+    fetch("/api/preview-bundle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, entry })
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await res.text());
+        return (await res.json()) as PreviewBundle;
+      })
+      .then((bundle) => {
+        if (!cancelled) setPreviewBundle(bundle);
+      })
+      .catch((err) => {
+        if (!cancelled) setPreviewError(err instanceof Error ? err.message : "预览生成失败");
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [answer, projectId]);
 
   async function ask() {
     if (!projectId || !question.trim()) return;
@@ -508,27 +559,40 @@ export function AssistantWorkbench() {
                   <MonitorPlay size={17} />
                   页面预览
                 </div>
-                {answer?.previewHtml ? (
+                {previewBundle ? (
                   <span className="badge" data-level="high">
-                    AI Generated
+                    Live Render · {previewBundle.entryComponent}
                   </span>
                 ) : null}
               </div>
               <div className="preview-body">
-                {answer?.previewHtml ? (
-                  <iframe
-                    srcDoc={answer.previewHtml}
-                    className="preview-frame"
-                    title="Page Preview"
-                    sandbox="allow-scripts"
-                  />
+                {previewLoading ? (
+                  <div className="empty-state">
+                    <div className="empty-inner">
+                      <div className="empty-icon">
+                        <Loader2 size={24} className="animate-spin" />
+                      </div>
+                      正在收集组件依赖并构建真实渲染环境…
+                    </div>
+                  </div>
+                ) : previewBundle ? (
+                  <PreviewSandbox bundle={previewBundle} />
+                ) : previewError ? (
+                  <div className="empty-state">
+                    <div className="empty-inner">
+                      <div className="empty-icon" data-tone="amber">
+                        <MonitorPlay size={24} />
+                      </div>
+                      预览构建失败：{previewError}
+                    </div>
+                  </div>
                 ) : (
                   <div className="empty-state">
                     <div className="empty-inner">
                       <div className="empty-icon" data-tone="amber">
                         <MonitorPlay size={24} />
                       </div>
-                      开启 AI Gateway 并提问后，这里将实时渲染代码对应的组件高保真预览。
+                      提问后，这里会收集组件源码与依赖，用 Sandpack 在浏览器内真实渲染对应页面。
                     </div>
                   </div>
                 )}

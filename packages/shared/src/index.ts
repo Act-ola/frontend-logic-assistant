@@ -95,7 +95,6 @@ export type LogicAnswer = {
   usedFacts: LogicFact[];
   mode: "local" | "gateway";
   trace?: AnswerTrace;
-  previewHtml?: string;
 };
 
 /**
@@ -110,3 +109,20 @@ export type AskStreamEvent =
   | { type: "reasoning"; delta: string }
   | { type: "answer"; answer: LogicAnswer }
   | { type: "error"; message: string };
+
+/**
+ * 页面预览的 Sandpack 打包产物：把入口组件及其本地依赖源码、npm 依赖、
+ * 自动生成的挂载入口（含 Provider/接口 mock）打包，交给前端在浏览器内真实渲染。
+ */
+export type PreviewBundle = {
+  /** 入口组件文件（相对项目根，如 src/pages/order/List.jsx） */
+  entry: string;
+  /** 入口组件名（default export 组件） */
+  entryComponent: string;
+  /** Sandpack 文件表：路径 -> 源码，含自动生成的 /index.js 挂载入口 */
+  files: Record<string, string>;
+  /** npm 依赖表：包名 -> 版本（不含 react/react-dom，由模板提供） */
+  dependencies: Record<string, string>;
+  /** 渲染模式：gateway 表示挂载入口由 AI 生成，local 为通用模板兜底 */
+  mountMode: "local" | "gateway";
+};

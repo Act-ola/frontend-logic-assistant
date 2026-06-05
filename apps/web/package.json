@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",
+    "@codesandbox/sandpack-react": "^2.19.0",
     "@frontend-logic/analyzer": "file:../../packages/analyzer",
     "@frontend-logic/shared": "file:../../packages/shared",
     "ai": "6.0.197",

@@ -76,22 +76,16 @@ export async function* streamAnswer(
       schema: z.object({
         conclusion: z
           .string()
-          .describe("用中文回答用户问题，结论简洁明确、直击要点。证据不足时明确说明不确定。"),
-        previewHtml: z
-          .string()
-          .describe(
-            "根据提取的代码逻辑，写一段完整的单文件 HTML 代码（需包含 <html> <body> 结构和 Tailwind CSS 的 CDN 引入）。该页面应高仿真模拟代码片段代表的 UI 界面，使用 mock 数据，确保能独立在 iframe 内漂亮地渲染出来。包含交互的请用内联简单的 script 实现。"
-          )
+          .describe("用中文回答用户问题，结论简洁明确、直击要点。证据不足时明确说明不确定。")
       }),
       system:
-        "你是企业内部前端逻辑问答助手。基于代码证据与已有的分析推理，给出结论并生成直观的高仿真页面预览。",
+        "你是企业内部前端逻辑问答助手。基于代码证据与已有的分析推理，给出简洁明确的结论。",
       prompt: `用户问题：${question}\n\n分析推理：\n${reasoning}\n\n代码证据：\n${evidence}`
     });
 
     const answer: LogicAnswer = {
       ...local,
       conclusion: structured.object.conclusion || local.conclusion,
-      previewHtml: structured.object.previewHtml,
       mode: "gateway",
       trace: { ...baseTrace, mode: "gateway", model, reasoning, durationMs: Date.now() - start }
     };
