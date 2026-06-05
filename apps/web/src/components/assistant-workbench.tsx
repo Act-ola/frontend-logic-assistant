@@ -2,8 +2,10 @@
 
 import type { LogicAnswer, ProjectConfig } from "@frontend-logic/shared";
 import {
+  Activity,
   Brain,
   Braces,
+  ChevronDown,
   Code2,
   DatabaseZap,
   FileCode2,
@@ -12,6 +14,7 @@ import {
   MonitorPlay,
   Loader2,
   RefreshCcw,
+  ScanSearch,
   Search,
   Sparkles,
   Zap
@@ -43,6 +46,7 @@ export function AssistantWorkbench() {
   const [answer, setAnswer] = useState<LogicAnswer | null>(null);
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [examples, setExamples] = useState<string[]>(DEFAULT_EXAMPLES);
+  const [traceOpen, setTraceOpen] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [indexing, setIndexing] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -265,6 +269,93 @@ export function AssistantWorkbench() {
               </span>
             </div>
           </div>
+
+          {answer ? (
+            <div className="trace-card">
+              <button
+                type="button"
+                className="trace-head"
+                onClick={() => setTraceOpen((open) => !open)}
+                aria-expanded={traceOpen}
+              >
+                <span className="trace-head-title">
+                  <Activity size={16} />
+                  调用详情
+                  <span className="trace-mode">
+                    {(answer.trace?.mode ?? answer.mode) === "gateway"
+                      ? `AI Gateway${answer.trace?.model ? ` · ${answer.trace.model}` : ""}`
+                      : "本地推理引擎"}
+                  </span>
+                </span>
+                <ChevronDown
+                  size={16}
+                  className={`trace-chevron${traceOpen ? " open" : ""}`}
+                />
+              </button>
+
+              {traceOpen ? (
+                <div className="trace-body">
+                  {answer.trace ? (
+                    <div className="trace-overview">
+                      <span className="trace-stat">
+                        <ScanSearch size={13} />
+                        命中 {answer.trace.matchedFacts} / 共 {answer.trace.totalFacts} 条事实
+                      </span>
+                      <span className="trace-stat">
+                        <Code2 size={13} />
+                        采用 {answer.trace.usedFacts} 条
+                      </span>
+                      {answer.trace.queryTerms.length > 0 ? (
+                        <div className="trace-terms">
+                          <span className="trace-terms-label">查询词</span>
+                          {answer.trace.queryTerms.slice(0, 12).map((term) => (
+                            <span key={term} className="term-chip">
+                              {term}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {answer.usedFacts.length > 0 ? (
+                    <div className="trace-section">
+                      <h4 className="trace-section-title">用到的逻辑事实</h4>
+                      <ul className="fact-list">
+                        {answer.usedFacts.slice(0, 8).map((fact) => (
+                          <li key={fact.id} className="fact-item">
+                            <span className="fact-type">{fact.type}</span>
+                            <span className="fact-loc">
+                              {fact.filePath}:{fact.line}
+                            </span>
+                            {fact.targetText ?? fact.expression ? (
+                              <span className="fact-expr">{fact.targetText ?? fact.expression}</span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {answer.evidence.length > 0 ? (
+                    <div className="trace-section">
+                      <h4 className="trace-section-title">代码证据</h4>
+                      <div className="evidence-list">
+                        {answer.evidence.slice(0, 5).map((item, idx) => (
+                          <div key={`${item.filePath}:${item.line}:${idx}`} className="evidence-item">
+                            <div className="evidence-meta">
+                              {item.filePath}:{item.line}
+                            </div>
+                            <pre className="code-block">{item.snippet}</pre>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {error ? (
             <div className="alert">

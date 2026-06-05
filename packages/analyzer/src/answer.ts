@@ -37,7 +37,14 @@ export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAn
     relatedFiles,
     evidence,
     usedFacts: facts,
-    mode: "local"
+    mode: "local",
+    trace: {
+      mode: "local",
+      totalFacts: diagnostics.totalFacts,
+      matchedFacts: diagnostics.matchedFacts,
+      usedFacts: facts.length,
+      queryTerms: diagnostics.queryTerms
+    }
   };
 }
 

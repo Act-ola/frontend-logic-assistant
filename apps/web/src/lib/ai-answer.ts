@@ -29,8 +29,9 @@ export async function answerQuestion(index: ProjectIndex, question: string): Pro
     })
     .join("\n\n");
 
+  const model = process.env.AI_MODEL || "deepseek-chat";
   const result = await generateObject({
-    model: deepseek(process.env.AI_MODEL || "deepseek-chat"),
+    model: deepseek(model),
     schema: z.object({
       conclusion: z.string().describe("用中文回答，结论简洁，列出判断条件、数据来源、涉及文件。证据不足时明确说不确定。"),
       previewHtml: z.string().describe("根据提取的代码逻辑，写一段完整的单文件 HTML 代码（需包含 <html> <body> 结构和 Tailwind CSS 的 CDN 引入）。该页面应该高仿真模拟代码片段代表的 UI 界面，使用 mock 数据，确保能够独立在 iframe 内漂亮地渲染出来。包含交互的请用内联简单的 script 实现。")
@@ -44,6 +45,7 @@ export async function answerQuestion(index: ProjectIndex, question: string): Pro
     ...local,
     conclusion: result.object.conclusion || local.conclusion,
     previewHtml: result.object.previewHtml,
-    mode: "gateway"
+    mode: "gateway",
+    trace: local.trace ? { ...local.trace, mode: "gateway", model } : undefined
   };
 }
