@@ -70,6 +70,15 @@ export type AnswerSection = {
   items: string[];
 };
 
+export type AnswerTrace = {
+  mode: "local" | "gateway";
+  model?: string;
+  totalFacts: number;
+  matchedFacts: number;
+  usedFacts: number;
+  queryTerms: string[];
+};
+
 export type LogicAnswer = {
   question: string;
   conclusion: string;
@@ -79,5 +88,6 @@ export type LogicAnswer = {
   evidence: EvidenceRef[];
   usedFacts: LogicFact[];
   mode: "local" | "gateway";
+  trace?: AnswerTrace;
   previewHtml?: string;
 };
