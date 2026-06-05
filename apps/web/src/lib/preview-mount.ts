@@ -84,7 +84,17 @@ async function aiMount(
     ].join("\n")
   });
 
-  return result.object.mountCode;
+  return stripCodeFence(result.object.mountCode);
+}
+
+/** 剥离模型可能附带的 markdown 代码块围栏（```js ... ```）。 */
+function stripCodeFence(code: string): string {
+  const trimmed = code.trim();
+  if (!trimmed.startsWith("```")) return trimmed;
+  return trimmed
+    .replace(/^```[\w-]*\n?/, "")
+    .replace(/\n?```$/, "")
+    .trim();
 }
 
 /** 把入口以外的本地文件压成带路径标注的节选，喂给模型作为依赖上下文。 */

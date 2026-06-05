@@ -1,0 +1,11 @@
+{
+  "name": "order-admin-demo",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "mobx": "^6.10.0",
+    "mobx-react-lite": "^4.0.0"
+  }
+}
