@@ -24,7 +24,7 @@ type IndexStatus = {
   facts?: number;
 };
 
-const EXAMPLES = [
+const DEFAULT_EXAMPLES = [
   "导出按钮什么时候显示？",
   "手机号为什么有时候看不到？",
   "订单列表调用了哪些接口？"
@@ -39,9 +39,10 @@ const CONFIDENCE_LABEL: Record<string, string> = {
 export function AssistantWorkbench() {
   const [projects, setProjects] = useState<ProjectConfig[]>([]);
   const [projectId, setProjectId] = useState("");
-  const [question, setQuestion] = useState(EXAMPLES[0]);
+  const [question, setQuestion] = useState(DEFAULT_EXAMPLES[0]);
   const [answer, setAnswer] = useState<LogicAnswer | null>(null);
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
+  const [examples, setExamples] = useState<string[]>(DEFAULT_EXAMPLES);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [indexing, setIndexing] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -64,6 +65,25 @@ export function AssistantWorkbench() {
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoadingProjects(false));
   }, []);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    fetch(`/api/suggestions?projectId=${encodeURIComponent(projectId)}`)
+      .then((res) => (res.ok ? res.json() : { suggestions: [] }))
+      .then((data: { suggestions?: string[] }) => {
+        if (cancelled) return;
+        setExamples(
+          data.suggestions && data.suggestions.length > 0 ? data.suggestions : DEFAULT_EXAMPLES
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setExamples(DEFAULT_EXAMPLES);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   async function refreshIndex() {
     if (!projectId) return;
@@ -235,7 +255,7 @@ export function AssistantWorkbench() {
             </div>
             <div className="examples">
               <span className="examples-label">试试：</span>
-              {EXAMPLES.map((example) => (
+              {examples.map((example) => (
                 <button key={example} className="chip" onClick={() => setQuestion(example)}>
                   {example}
                 </button>
