@@ -5,8 +5,8 @@ import type { LogicFact, ProjectIndex } from "@frontend-logic/shared";
  * 它们仍贴合"前端逻辑问答"主题，适用于任意 React 项目。
  */
 const GENERIC_FALLBACK = [
-  "这个项目里有哪些按钮的显示是有条件的？",
-  "页面数据是通过哪些接口加载的？",
+  "这个项目里有哪些按钮或入口是按条件显示的？",
+  "哪些信息在不同业务状态下会展示不同内容？",
   "哪些内容会根据登录用户或权限变化？"
 ];
 
@@ -17,8 +17,8 @@ const CONFIDENCE_ORDER: Record<LogicFact["confidence"], number> = {
 };
 
 /**
- * 基于项目代码索引生成"跟项目相关"的推荐问题。
- * 优先级：可见性条件 → 可用性属性 → 接口调用 → 权限/上下文 → 交互入口，最后用通用问题补足。
+ * 基于项目代码索引生成"业务逻辑相关"的推荐问题（聚焦展示/交互规则，不涉及接口、组件等技术细节）。
+ * 优先级：可见性条件 → 可用性属性 → 权限/上下文，最后用通用业务问题补足。
  */
 export function suggestQuestions(index: ProjectIndex, limit = 4): string[] {
   const out: string[] = [];
@@ -52,27 +52,12 @@ export function suggestQuestions(index: ProjectIndex, limit = 4): string[] {
     if (out.length >= limit) break;
   }
 
-  // 3) 接口调用：按组件 / 文件聚合
-  for (const scope of collectApiScopes(facts)) {
-    push(`${scope} 调用了哪些接口？`);
-    if (out.length >= limit) break;
-  }
-
-  // 4) 权限 / 上下文
+  // 3) 权限 / 上下文：展示是否随登录用户或权限变化（业务规则）
   if (facts.some((fact) => fact.type === "context" || fact.type === "mobx")) {
     push("哪些内容会根据登录用户或权限变化？");
   }
 
-  // 5) 交互入口（允许可读的英文 handler 名）
-  const handlers = facts.filter(
-    (fact) => fact.type === "event_handler" && readableLabel(fact.targetText, true)
-  );
-  for (const fact of handlers) {
-    push(`${readableLabel(fact.targetText, true)} 处理了哪些逻辑？`);
-    if (out.length >= limit) break;
-  }
-
-  // 6) 用通用问题补足到 limit
+  // 4) 用通用业务问题补足到 limit
   for (const generic of GENERIC_FALLBACK) {
     if (out.length >= limit) break;
     push(generic);
@@ -87,34 +72,14 @@ function byConfidence(a: LogicFact, b: LogicFact): number {
 
 /**
  * 清洗并校验目标文案是否适合作为推荐语标签。
- * 默认只接受含中文的短文案；allowAscii 时额外接受合理的英文标识符（如 handler 名）。
+ * 只接受含中文的短业务文案，过滤掉变量名、符号等技术碎片。
  */
-function readableLabel(target: string | undefined, allowAscii = false): string | undefined {
+function readableLabel(target: string | undefined): string | undefined {
   if (!target) return undefined;
   // 三元表达式两侧用 " / " 连接，取第一段；去掉 <Xxx> 组件占位
   let label = (target.split(" / ")[0] ?? target).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   if (!label) return undefined;
   if (label.length > 14) label = label.slice(0, 14);
-
-  if (/[一-鿿]/.test(label)) return label;
-  if (allowAscii && /^[A-Za-z][A-Za-z0-9_]{2,}$/.test(label)) return label;
-  return undefined;
-}
-
-function collectApiScopes(facts: LogicFact[]): string[] {
-  const scopes: string[] = [];
-  const seen = new Set<string>();
-  for (const fact of facts) {
-    if (fact.type !== "api_call") continue;
-    const scope = fact.componentName ?? baseName(fact.filePath);
-    if (!scope || seen.has(scope)) continue;
-    seen.add(scope);
-    scopes.push(scope);
-  }
-  return scopes;
-}
-
-function baseName(filePath: string): string {
-  const file = filePath.split("/").pop() ?? filePath;
-  return file.replace(/\.(jsx?|tsx?)$/, "");
+  // 只接受含中文的业务文案，过滤掉变量名 / 符号等技术碎片
+  return /[一-鿿]/.test(label) ? label : undefined;
 }
