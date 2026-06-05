@@ -19,7 +19,7 @@ import {
   Sparkles,
   Zap
 } from "lucide-react";
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 type IndexStatus = {
   generatedAt?: string;
@@ -70,24 +70,26 @@ export function AssistantWorkbench() {
       .finally(() => setLoadingProjects(false));
   }, []);
 
+  const loadSuggestions = useCallback(async (id: string): Promise<string[]> => {
+    try {
+      const res = await fetch(`/api/suggestions?projectId=${encodeURIComponent(id)}`);
+      const data = (res.ok ? await res.json() : { suggestions: [] }) as { suggestions?: string[] };
+      return data.suggestions && data.suggestions.length > 0 ? data.suggestions : DEFAULT_EXAMPLES;
+    } catch {
+      return DEFAULT_EXAMPLES;
+    }
+  }, []);
+
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    fetch(`/api/suggestions?projectId=${encodeURIComponent(projectId)}`)
-      .then((res) => (res.ok ? res.json() : { suggestions: [] }))
-      .then((data: { suggestions?: string[] }) => {
-        if (cancelled) return;
-        setExamples(
-          data.suggestions && data.suggestions.length > 0 ? data.suggestions : DEFAULT_EXAMPLES
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setExamples(DEFAULT_EXAMPLES);
-      });
+    loadSuggestions(projectId).then((list) => {
+      if (!cancelled) setExamples(list);
+    });
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, loadSuggestions]);
 
   async function refreshIndex() {
     if (!projectId) return;
@@ -101,6 +103,8 @@ export function AssistantWorkbench() {
       });
       if (!res.ok) throw new Error(await res.text());
       setIndexStatus(await res.json());
+      // 索引重建后同步刷新推荐语，确保和最新代码/目录一致
+      setExamples(await loadSuggestions(projectId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "索引失败");
     } finally {
