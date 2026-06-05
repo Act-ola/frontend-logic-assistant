@@ -77,6 +77,12 @@ export type AnswerTrace = {
   matchedFacts: number;
   usedFacts: number;
   queryTerms: string[];
+  /** AI 的完整思考过程（流式累积后的全文） */
+  reasoning?: string;
+  /** 本次问答调用总耗时（毫秒） */
+  durationMs?: number;
+  /** 喂给模型的证据/提示大致字符数，用于展示调用规模 */
+  promptChars?: number;
 };
 
 export type LogicAnswer = {
@@ -91,3 +97,16 @@ export type LogicAnswer = {
   trace?: AnswerTrace;
   previewHtml?: string;
 };
+
+/**
+ * /api/ask 流式响应的事件协议（按 NDJSON 逐行传输）。
+ * - trace：开始时下发的调用详情元信息（模型、查询词、命中事实数等）
+ * - reasoning：AI 思考过程增量，前端逐字追加
+ * - answer：思考结束后的完整答案（结论、预览等）
+ * - error：异常信息
+ */
+export type AskStreamEvent =
+  | { type: "trace"; trace: AnswerTrace }
+  | { type: "reasoning"; delta: string }
+  | { type: "answer"; answer: LogicAnswer }
+  | { type: "error"; message: string };

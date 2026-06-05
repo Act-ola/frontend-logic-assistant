@@ -752,6 +752,80 @@ button {
   color: var(--blue);
 }
 
+/* 思考过程区：实时展示 AI 的逐字推理 */
+.trace-reasoning-section .trace-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent);
+}
+
+.trace-reasoning-section .trace-section-title svg {
+  color: var(--accent);
+}
+
+.trace-reasoning {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.trace-reasoning--empty {
+  color: var(--text-subtle);
+}
+
+.reasoning-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  border-radius: 1px;
+  animation: reasoning-blink 1s steps(2, start) infinite;
+}
+
+.trace-live {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  margin-left: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.trace-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: reasoning-blink 1.1s ease-in-out infinite;
+}
+
+@keyframes reasoning-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
 .fact-list {
   margin: 0;
   padding: 0;

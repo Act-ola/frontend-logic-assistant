@@ -1,6 +1,6 @@
 "use client";
 
-import type { LogicAnswer, ProjectConfig } from "@frontend-logic/shared";
+import type { AnswerTrace, AskStreamEvent, LogicAnswer, ProjectConfig } from "@frontend-logic/shared";
 import {
   Activity,
   Brain,
@@ -8,9 +8,7 @@ import {
   ChevronDown,
   Code2,
   DatabaseZap,
-  FileCode2,
   FolderGit2,
-  ListChecks,
   MonitorPlay,
   Loader2,
   RefreshCcw,
@@ -47,6 +45,8 @@ export function AssistantWorkbench() {
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [examples, setExamples] = useState<string[]>(DEFAULT_EXAMPLES);
   const [traceOpen, setTraceOpen] = useState(false);
+  const [reasoning, setReasoning] = useState("");
+  const [liveTrace, setLiveTrace] = useState<AnswerTrace | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [indexing, setIndexing] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -58,6 +58,13 @@ export function AssistantWorkbench() {
   );
 
   const isGateway = answer?.mode === "gateway";
+
+  // 调用详情面板：answer 到达后用完整的最终 trace（含耗时），流式期间用实时下发的 liveTrace
+  const panelTrace = answer?.trace ?? liveTrace;
+  const panelMode = answer?.trace?.mode ?? liveTrace?.mode ?? answer?.mode ?? "local";
+  const panelModel = answer?.trace?.model ?? liveTrace?.model;
+  const showTracePanel = Boolean(answer || asking || reasoning);
+  const isThinking = asking && !answer;
 
   useEffect(() => {
     fetch("/api/projects")
@@ -116,14 +123,66 @@ export function AssistantWorkbench() {
     if (!projectId || !question.trim()) return;
     setAsking(true);
     setError("");
+    setAnswer(null);
+    setReasoning("");
+    setLiveTrace(null);
+    setTraceOpen(true);
+
+    const handleEvent = (event: AskStreamEvent) => {
+      if (event.type === "trace") {
+        setLiveTrace(event.trace);
+      } else if (event.type === "reasoning") {
+        setReasoning((prev) => prev + event.delta);
+      } else if (event.type === "answer") {
+        setAnswer(event.answer);
+      } else if (event.type === "error") {
+        setError(event.message);
+      }
+    };
+
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, question })
       });
-      if (!res.ok) throw new Error(await res.text());
-      setAnswer(await res.json());
+      if (!res.ok || !res.body) {
+        throw new Error(res.ok ? "响应为空" : await res.text());
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const tryHandle = (line: string) => {
+        try {
+          handleEvent(JSON.parse(line) as AskStreamEvent);
+        } catch {
+          // 半行或解析失败，忽略该行
+        }
+      };
+
+      const drain = (flush: boolean) => {
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          if (line) tryHandle(line);
+        }
+        if (flush) {
+          const tail = buffer.trim();
+          if (tail) tryHandle(tail);
+          buffer = "";
+        }
+      };
+
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        drain(false);
+      }
+      drain(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "问答失败");
     } finally {
@@ -274,7 +333,7 @@ export function AssistantWorkbench() {
             </div>
           </div>
 
-          {answer ? (
+          {showTracePanel ? (
             <div className="trace-card">
               <button
                 type="button"
@@ -286,10 +345,11 @@ export function AssistantWorkbench() {
                   <Activity size={16} />
                   调用详情
                   <span className="trace-mode">
-                    {(answer.trace?.mode ?? answer.mode) === "gateway"
-                      ? `AI Gateway${answer.trace?.model ? ` · ${answer.trace.model}` : ""}`
+                    {panelMode === "gateway"
+                      ? `AI Gateway${panelModel ? ` · ${panelModel}` : ""}`
                       : "本地推理引擎"}
                   </span>
+                  {isThinking ? <span className="trace-live">实时思考中</span> : null}
                 </span>
                 <ChevronDown
                   size={16}
@@ -299,20 +359,43 @@ export function AssistantWorkbench() {
 
               {traceOpen ? (
                 <div className="trace-body">
-                  {answer.trace ? (
+                  <div className="trace-section trace-reasoning-section">
+                    <h4 className="trace-section-title">
+                      <Brain size={13} />
+                      思考过程
+                    </h4>
+                    {reasoning ? (
+                      <div className="trace-reasoning">
+                        {reasoning}
+                        {isThinking ? <span className="reasoning-caret" /> : null}
+                      </div>
+                    ) : (
+                      <div className="trace-reasoning trace-reasoning--empty">
+                        {isThinking ? "正在连接模型，准备思考…" : "暂无思考过程"}
+                      </div>
+                    )}
+                  </div>
+
+                  {panelTrace ? (
                     <div className="trace-overview">
                       <span className="trace-stat">
                         <ScanSearch size={13} />
-                        命中 {answer.trace.matchedFacts} / 共 {answer.trace.totalFacts} 条事实
+                        命中 {panelTrace.matchedFacts} / 共 {panelTrace.totalFacts} 条事实
                       </span>
                       <span className="trace-stat">
                         <Code2 size={13} />
-                        采用 {answer.trace.usedFacts} 条
+                        采用 {panelTrace.usedFacts} 条
                       </span>
-                      {answer.trace.queryTerms.length > 0 ? (
+                      {panelTrace.durationMs != null ? (
+                        <span className="trace-stat">
+                          <Activity size={13} />
+                          耗时 {(panelTrace.durationMs / 1000).toFixed(1)}s
+                        </span>
+                      ) : null}
+                      {panelTrace.queryTerms.length > 0 ? (
                         <div className="trace-terms">
                           <span className="trace-terms-label">查询词</span>
-                          {answer.trace.queryTerms.slice(0, 12).map((term) => (
+                          {panelTrace.queryTerms.slice(0, 12).map((term) => (
                             <span key={term} className="term-chip">
                               {term}
                             </span>
@@ -322,7 +405,7 @@ export function AssistantWorkbench() {
                     </div>
                   ) : null}
 
-                  {answer.usedFacts.length > 0 ? (
+                  {answer && answer.usedFacts.length > 0 ? (
                     <div className="trace-section">
                       <h4 className="trace-section-title">用到的逻辑事实</h4>
                       <ul className="fact-list">
@@ -341,7 +424,7 @@ export function AssistantWorkbench() {
                     </div>
                   ) : null}
 
-                  {answer.evidence.length > 0 ? (
+                  {answer && answer.evidence.length > 0 ? (
                     <div className="trace-section">
                       <h4 className="trace-section-title">代码证据</h4>
                       <div className="evidence-list">
@@ -381,38 +464,16 @@ export function AssistantWorkbench() {
               </div>
               <div className="card-body">
                 {answer ? (
-                  <>
-                    <p className="answer-conclusion">{answer.conclusion}</p>
-                    {answer.sections.map((section) => (
-                      <div className="section" key={section.title}>
-                        <h4 className="section-title">
-                          <ListChecks size={13} />
-                          {section.title}
-                        </h4>
-                        <ul>
-                          {section.items.map((item) => (
-                            <li key={item}>{item}</li>
-                          ))}
-                        </ul>
+                  <p className="answer-conclusion">{answer.conclusion}</p>
+                ) : isThinking ? (
+                  <div className="empty-state">
+                    <div className="empty-inner">
+                      <div className="empty-icon">
+                        <Loader2 size={24} className="animate-spin" />
                       </div>
-                    ))}
-                    {answer.relatedFiles.length > 0 ? (
-                      <div className="section">
-                        <h4 className="section-title">
-                          <FileCode2 size={13} />
-                          涉及文件
-                        </h4>
-                        <div className="file-list">
-                          {answer.relatedFiles.map((file) => (
-                            <span key={file} className="file-chip">
-                              <FileCode2 size={12} />
-                              {file}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
+                      正在分析代码证据并生成结论，可展开上方「调用详情」实时查看 AI 思考过程。
+                    </div>
+                  </div>
                 ) : (
                   <div className="empty-state">
                     <div className="empty-inner">
