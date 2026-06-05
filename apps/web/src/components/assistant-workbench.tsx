@@ -30,7 +30,7 @@ type IndexStatus = {
 const DEFAULT_EXAMPLES = [
   "导出按钮什么时候显示？",
   "手机号为什么有时候看不到？",
-  "订单列表调用了哪些接口？"
+  "哪些订单不会显示在列表里？"
 ];
 
 const CONFIDENCE_LABEL: Record<string, string> = {
