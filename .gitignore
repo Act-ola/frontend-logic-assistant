@@ -1,0 +1,16 @@
+.DS_Store
+node_modules
+.next
+out
+dist
+coverage
+.turbo
+.env
+.env.*
+!.env.example
+.logic-assistant
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

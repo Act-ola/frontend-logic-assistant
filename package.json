@@ -1,0 +1,22 @@
+{
+  "name": "frontend-logic-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Evidence-first React logic Q&A platform for product and QA teams.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace apps/web run dev",
+    "build": "npm --workspace apps/web run build",
+    "lint": "npm --workspace apps/web run lint",
+    "typecheck": "npm --workspace apps/web run typecheck && npm --workspace packages/analyzer run typecheck",
+    "analyze:demo": "npm --workspace packages/analyzer run analyze:demo"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.1",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3"
+  }
+}

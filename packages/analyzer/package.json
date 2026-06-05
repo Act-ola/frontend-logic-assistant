@@ -1,0 +1,25 @@
+{
+  "name": "@frontend-logic/analyzer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "analyze:demo": "node --import tsx src/cli.ts ../../sample-repos/order-admin-demo",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@babel/generator": "7.29.7",
+    "@babel/parser": "7.29.7",
+    "@babel/traverse": "7.29.7",
+    "@babel/types": "7.29.7",
+    "@frontend-logic/shared": "file:../shared",
+    "fast-glob": "3.3.3"
+  },
+  "devDependencies": {
+    "@types/babel__generator": "7.27.0",
+    "@types/babel__traverse": "7.28.0"
+  }
+}

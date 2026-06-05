@@ -1,0 +1,26 @@
+import type { ProjectIndex } from "@frontend-logic/shared";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { workspaceRoot } from "./workspace";
+
+function indexDir() {
+  return path.join(workspaceRoot(), ".logic-assistant/indexes");
+}
+
+export async function saveIndex(index: ProjectIndex) {
+  await mkdir(indexDir(), { recursive: true });
+  await writeFile(indexPath(index.project.id), JSON.stringify(index, null, 2), "utf8");
+}
+
+export async function loadIndex(projectId: string): Promise<ProjectIndex | null> {
+  try {
+    const content = await readFile(indexPath(projectId), "utf8");
+    return JSON.parse(content) as ProjectIndex;
+  } catch {
+    return null;
+  }
+}
+
+function indexPath(projectId: string) {
+  return path.join(indexDir(), `${projectId}.json`);
+}
