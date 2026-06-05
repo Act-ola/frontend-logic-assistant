@@ -74,6 +74,8 @@ export function AssistantWorkbench() {
   const [previewBundle, setPreviewBundle] = useState<PreviewBundle | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [sandpackKey, setSandpackKey] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === projectId),
@@ -179,7 +181,13 @@ export function AssistantWorkbench() {
     return () => {
       cancelled = true;
     };
-  }, [answer, projectId]);
+  }, [answer, projectId, reloadKey]);
+
+  // 预览构建失败（如依赖拉取偶发失败）时，手动重来一遍：重置 Sandpack 并重新请求 bundle
+  function reloadPreview() {
+    setSandpackKey((key) => key + 1);
+    setReloadKey((key) => key + 1);
+  }
 
   async function ask() {
     if (!projectId || !question.trim()) return;
@@ -559,11 +567,25 @@ export function AssistantWorkbench() {
                   <MonitorPlay size={17} />
                   页面预览
                 </div>
-                {previewBundle ? (
-                  <span className="badge" data-level="high">
-                    Live Render · {previewBundle.entryComponent}
-                  </span>
-                ) : null}
+                <div className="preview-actions">
+                  {previewBundle ? (
+                    <span className="badge" data-level="high">
+                      Live Render · {previewBundle.entryComponent}
+                    </span>
+                  ) : null}
+                  {answer ? (
+                    <button
+                      type="button"
+                      className="preview-refresh"
+                      onClick={reloadPreview}
+                      disabled={previewLoading}
+                      title="重新生成预览"
+                    >
+                      <RefreshCcw size={14} className={previewLoading ? "animate-spin" : ""} />
+                      重试
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <div className="preview-body">
                 {previewLoading ? (
@@ -576,7 +598,7 @@ export function AssistantWorkbench() {
                     </div>
                   </div>
                 ) : previewBundle ? (
-                  <PreviewSandbox bundle={previewBundle} />
+                  <PreviewSandbox key={sandpackKey} bundle={previewBundle} />
                 ) : previewError ? (
                   <div className="empty-state">
                     <div className="empty-inner">

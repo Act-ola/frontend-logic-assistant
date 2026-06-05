@@ -5,24 +5,32 @@ import path from "node:path";
 const SOURCE_EXTENSIONS = [".jsx", ".tsx", ".js", ".ts"];
 // react / react-dom 由 Sandpack 的 react 模板自带，无需声明
 const TEMPLATE_PROVIDED = new Set(["react", "react-dom"]);
+// 防止超大项目把整棵依赖树拉进 bundle
+const MAX_FILES = 120;
+
+type AliasRule = { prefix: string; targetDir: string };
 
 export type CollectedBundle = {
-  /** 收集到的本地源文件：相对项目根的 posix 路径 -> 源码 */
+  /** 收集到的本地源文件：相对项目根的 posix 路径 -> 源码（别名 import 已重写为绝对路径） */
   files: Record<string, string>;
   /** 入口文件相对路径（posix） */
   entryRel: string;
   /** 入口 default 导出的组件名（用于展示） */
   entryComponent: string;
-  /** 依赖的 npm 顶层包名集合（已排除模板自带） */
+  /** 依赖的 npm 顶层包名集合（已排除模板自带与路径别名） */
   npmDependencies: string[];
 };
 
 /**
- * 从入口组件出发，BFS 递归收集其本地 import 的源文件（完整源码），
- * 同时归集 npm 裸模块依赖。所有文件解析都被限制在 project 根目录内。
+ * 从入口组件出发，BFS 递归收集其本地 import 的源文件（完整源码），同时归集 npm 裸模块依赖。
+ * - 相对路径 import：Sandpack 原样可解析；
+ * - 路径别名（如 @/...）：解析到真实文件并收集，同时把 import 重写为 Sandpack 绝对路径；
+ * - npm 裸模块：仅收合法包名，避免把别名误当依赖导致 Sandpack 拉取失败。
+ * 所有文件解析都被限制在 project 根目录内。
  */
 export async function collectBundle(rootPath: string, entryRel: string): Promise<CollectedBundle> {
   const root = path.resolve(rootPath);
+  const aliases = await loadAliasRules(root);
   const files: Record<string, string> = {};
   const npm = new Set<string>();
   const visited = new Set<string>();
@@ -34,7 +42,7 @@ export async function collectBundle(rootPath: string, entryRel: string): Promise
   }
   const queue: string[] = [entryAbs];
 
-  while (queue.length > 0) {
+  while (queue.length > 0 && Object.keys(files).length < MAX_FILES) {
     const abs = queue.shift() as string;
     if (visited.has(abs)) continue;
     visited.add(abs);
@@ -45,17 +53,34 @@ export async function collectBundle(rootPath: string, entryRel: string): Promise
     } catch {
       continue;
     }
-    files[toPosix(path.relative(root, abs))] = code;
 
+    const rewrites: Array<[string, string]> = [];
     for (const spec of extractImportSpecs(code)) {
-      if (isLocalSpec(spec)) {
+      // 1) 相对/绝对本地路径：Sandpack 按文件结构即可解析
+      if (isRelativeSpec(spec)) {
         const resolved = resolveModule(path.resolve(path.dirname(abs), spec), root);
         if (resolved && !visited.has(resolved)) queue.push(resolved);
-      } else {
+        continue;
+      }
+      // 2) 路径别名（如 @/...）：解析到本地文件并收集，把 import 重写成 Sandpack 绝对路径
+      const aliasBase = matchAlias(spec, aliases);
+      if (aliasBase) {
+        const resolved = resolveModule(aliasBase, root);
+        if (resolved) {
+          if (!visited.has(resolved)) queue.push(resolved);
+          const sandpackPath = `/${toPosix(path.relative(root, resolved)).replace(/\.\w+$/, "")}`;
+          rewrites.push([spec, sandpackPath]);
+        }
+        continue;
+      }
+      // 3) 合法 npm 裸模块才进依赖；未知别名 / 非法名一律忽略，避免拉取不存在的依赖
+      if (isLikelyNpmPackage(spec)) {
         const pkg = topLevelPackage(spec);
         if (pkg && !TEMPLATE_PROVIDED.has(pkg)) npm.add(pkg);
       }
     }
+
+    files[toPosix(path.relative(root, abs))] = applyRewrites(code, rewrites);
   }
 
   const entryRelPosix = toPosix(path.relative(root, entryAbs));
@@ -133,8 +158,58 @@ function extractImportSpecs(code: string): string[] {
   return [...specs];
 }
 
-function isLocalSpec(spec: string): boolean {
+function isRelativeSpec(spec: string): boolean {
   return spec.startsWith(".") || spec.startsWith("/");
+}
+
+/** 是否像一个能从 npm 公共源安装的包名（排除路径别名 @/ 与 ~）。 */
+function isLikelyNpmPackage(spec: string): boolean {
+  if (spec.startsWith("@/") || spec.startsWith("~")) return false;
+  if (spec.startsWith("@")) return /^@[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*/i.test(spec);
+  return /^[a-z0-9]/i.test(spec);
+}
+
+/** 命中别名时返回展开后的本地基路径，否则 null。 */
+function matchAlias(spec: string, aliases: AliasRule[]): string | null {
+  for (const { prefix, targetDir } of aliases) {
+    if (spec.startsWith(prefix)) {
+      return path.join(targetDir, spec.slice(prefix.length));
+    }
+  }
+  return null;
+}
+
+/** 把源码里别名 import 的说明符（连同引号）整体替换成新的路径。 */
+function applyRewrites(code: string, rewrites: Array<[string, string]>): string {
+  let out = code;
+  for (const [from, to] of rewrites) {
+    out = out.split(`"${from}"`).join(`"${to}"`).split(`'${from}'`).join(`'${to}'`);
+  }
+  return out;
+}
+
+/** 读 tsconfig/jsconfig 的 paths 生成别名规则，缺失或解析失败时回退默认 @/ -> src/。 */
+async function loadAliasRules(root: string): Promise<AliasRule[]> {
+  for (const cfgName of ["tsconfig.json", "jsconfig.json"]) {
+    try {
+      const cfg = JSON.parse(await readFile(path.join(root, cfgName), "utf8")) as {
+        compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> };
+      };
+      const baseUrl = cfg.compilerOptions?.baseUrl ?? ".";
+      const paths = cfg.compilerOptions?.paths ?? {};
+      const rules: AliasRule[] = [];
+      for (const [key, targets] of Object.entries(paths)) {
+        if (!key.endsWith("/*") || !targets?.[0]) continue;
+        const prefix = key.slice(0, -1); // "@/*" -> "@/"
+        const targetRel = targets[0].replace(/\*$/, "").replace(/^\.\//, "");
+        rules.push({ prefix, targetDir: path.join(root, baseUrl, targetRel) });
+      }
+      if (rules.length > 0) return rules;
+    } catch {
+      /* 配置缺失或含注释解析失败，尝试下一个或回退默认 */
+    }
+  }
+  return existsSync(path.join(root, "src")) ? [{ prefix: "@/", targetDir: path.join(root, "src") }] : [];
 }
 
 /** 取裸模块的顶层包名，支持 scoped 包（@scope/name）。 */
