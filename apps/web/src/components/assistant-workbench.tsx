@@ -1,6 +1,13 @@
 "use client";
 
-import type { AnswerTrace, AskStreamEvent, LogicAnswer, ProjectConfig } from "@frontend-logic/shared";
+import type {
+  AnswerTrace,
+  AskStreamEvent,
+  EvidenceRef,
+  LogicAnswer,
+  LogicFact,
+  ProjectConfig
+} from "@frontend-logic/shared";
 import {
   Activity,
   Brain,
@@ -47,6 +54,8 @@ export function AssistantWorkbench() {
   const [traceOpen, setTraceOpen] = useState(false);
   const [reasoning, setReasoning] = useState("");
   const [liveTrace, setLiveTrace] = useState<AnswerTrace | null>(null);
+  const [liveFacts, setLiveFacts] = useState<LogicFact[]>([]);
+  const [liveEvidence, setLiveEvidence] = useState<EvidenceRef[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [indexing, setIndexing] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -63,6 +72,8 @@ export function AssistantWorkbench() {
   const panelTrace = answer?.trace ?? liveTrace;
   const panelMode = answer?.trace?.mode ?? liveTrace?.mode ?? answer?.mode ?? "local";
   const panelModel = answer?.trace?.model ?? liveTrace?.model;
+  const panelFacts = answer?.usedFacts ?? liveFacts;
+  const panelEvidence = answer?.evidence ?? liveEvidence;
   const showTracePanel = Boolean(answer || asking || reasoning);
   const isThinking = asking && !answer;
 
@@ -126,11 +137,15 @@ export function AssistantWorkbench() {
     setAnswer(null);
     setReasoning("");
     setLiveTrace(null);
+    setLiveFacts([]);
+    setLiveEvidence([]);
     setTraceOpen(true);
 
     const handleEvent = (event: AskStreamEvent) => {
       if (event.type === "trace") {
         setLiveTrace(event.trace);
+        setLiveFacts(event.facts);
+        setLiveEvidence(event.evidence);
       } else if (event.type === "reasoning") {
         setReasoning((prev) => prev + event.delta);
       } else if (event.type === "answer") {
@@ -405,11 +420,11 @@ export function AssistantWorkbench() {
                     </div>
                   ) : null}
 
-                  {answer && answer.usedFacts.length > 0 ? (
+                  {panelFacts.length > 0 ? (
                     <div className="trace-section">
                       <h4 className="trace-section-title">用到的逻辑事实</h4>
                       <ul className="fact-list">
-                        {answer.usedFacts.slice(0, 8).map((fact) => (
+                        {panelFacts.slice(0, 8).map((fact) => (
                           <li key={fact.id} className="fact-item">
                             <span className="fact-type">{fact.type}</span>
                             <span className="fact-loc">
@@ -424,11 +439,11 @@ export function AssistantWorkbench() {
                     </div>
                   ) : null}
 
-                  {answer && answer.evidence.length > 0 ? (
+                  {panelEvidence.length > 0 ? (
                     <div className="trace-section">
                       <h4 className="trace-section-title">代码证据</h4>
                       <div className="evidence-list">
-                        {answer.evidence.slice(0, 5).map((item, idx) => (
+                        {panelEvidence.slice(0, 5).map((item, idx) => (
                           <div key={`${item.filePath}:${item.line}:${idx}`} className="evidence-item">
                             <div className="evidence-meta">
                               {item.filePath}:{item.line}

@@ -106,7 +106,7 @@ export type LogicAnswer = {
  * - error：异常信息
  */
 export type AskStreamEvent =
-  | { type: "trace"; trace: AnswerTrace }
+  | { type: "trace"; trace: AnswerTrace; facts: LogicFact[]; evidence: EvidenceRef[] }
   | { type: "reasoning"; delta: string }
   | { type: "answer"; answer: LogicAnswer }
   | { type: "error"; message: string };

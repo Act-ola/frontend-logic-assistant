@@ -31,7 +31,8 @@ export async function* streamAnswer(
     queryTerms: diagnostics.queryTerms,
     promptChars: evidence.length
   };
-  yield { type: "trace", trace: baseTrace };
+  // 逻辑事实与代码证据在检索阶段就已确定，随 trace 一起提前下发，前端可在思考开始时即渲染
+  yield { type: "trace", trace: baseTrace, facts: facts.slice(0, 8), evidence: local.evidence };
 
   let reasoning = "";
 
