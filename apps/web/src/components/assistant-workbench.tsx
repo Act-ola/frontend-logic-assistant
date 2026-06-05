@@ -16,7 +16,7 @@ import {
   Sparkles,
   Zap
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 type IndexStatus = {
   generatedAt?: string;
@@ -100,6 +100,14 @@ export function AssistantWorkbench() {
       setError(err instanceof Error ? err.message : "问答失败");
     } finally {
       setAsking(false);
+    }
+  }
+
+  function handleQueryKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // Enter 触发查询，Shift+Enter 换行；输入法组合（IME）确认时不触发
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      if (!asking && projectId) ask();
     }
   }
 
@@ -207,7 +215,8 @@ export function AssistantWorkbench() {
                 className="query-input"
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
-                placeholder="例如：导出按钮什么时候显示？"
+                onKeyDown={handleQueryKeyDown}
+                placeholder="例如：导出按钮什么时候显示？（Enter 查询，Shift+Enter 换行）"
               />
               <div className="query-actions">
                 <button className="btn btn-primary" onClick={ask} disabled={asking || !projectId}>
@@ -231,6 +240,9 @@ export function AssistantWorkbench() {
                   {example}
                 </button>
               ))}
+              <span className="query-hint">
+                <kbd>Enter</kbd> 查询 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行
+              </span>
             </div>
           </div>
 

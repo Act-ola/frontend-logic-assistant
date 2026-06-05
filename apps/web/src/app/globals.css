@@ -568,6 +568,31 @@ button {
   margin-right: 2px;
 }
 
+.query-hint {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+
+.query-hint kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+}
+
 .chip {
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
