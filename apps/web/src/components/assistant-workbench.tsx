@@ -42,7 +42,7 @@ const CONFIDENCE_LABEL: Record<string, string> = {
 export function AssistantWorkbench() {
   const [projects, setProjects] = useState<ProjectConfig[]>([]);
   const [projectId, setProjectId] = useState("");
-  const [question, setQuestion] = useState(DEFAULT_EXAMPLES[0]);
+  const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<LogicAnswer | null>(null);
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [examples, setExamples] = useState<string[]>(DEFAULT_EXAMPLES);
