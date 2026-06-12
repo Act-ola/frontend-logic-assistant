@@ -17,13 +17,23 @@ import {
   FolderGit2,
   MonitorPlay,
   Loader2,
+  Plus,
   RefreshCcw,
   ScanSearch,
   Search,
   Sparkles,
+  Trash2,
+  X,
   Zap
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent
+} from "react";
 import dynamic from "next/dynamic";
 
 // Sandpack 较重且依赖浏览器环境，仅在客户端动态加载
@@ -72,6 +82,13 @@ export function AssistantWorkbench() {
   const [previewError, setPreviewError] = useState("");
   const [sandpackKey, setSandpackKey] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addMode, setAddMode] = useState<"git" | "path">("git");
+  const [addName, setAddName] = useState("");
+  const [addRepo, setAddRepo] = useState("");
+  const [addBranch, setAddBranch] = useState("");
+  const [addingProject, setAddingProject] = useState(false);
+  const [addError, setAddError] = useState("");
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === projectId),
@@ -87,16 +104,20 @@ export function AssistantWorkbench() {
   const showTracePanel = Boolean(answer || asking || reasoning);
   const isThinking = asking && !answer;
 
+  const loadProjects = useCallback(async (): Promise<ProjectConfig[]> => {
+    const res = await fetch("/api/projects");
+    if (!res.ok) throw new Error(await res.text());
+    const data = (await res.json()) as { projects: ProjectConfig[] };
+    setProjects(data.projects);
+    return data.projects;
+  }, []);
+
   useEffect(() => {
-    fetch("/api/projects")
-      .then((res) => res.json())
-      .then((data: { projects: ProjectConfig[] }) => {
-        setProjects(data.projects);
-        setProjectId(data.projects[0]?.id ?? "");
-      })
+    loadProjects()
+      .then((list) => setProjectId((current) => current || (list[0]?.id ?? "")))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoadingProjects(false));
-  }, []);
+  }, [loadProjects]);
 
   const loadSuggestions = useCallback(async (id: string): Promise<string[]> => {
     try {
@@ -118,6 +139,70 @@ export function AssistantWorkbench() {
       cancelled = true;
     };
   }, [projectId, loadSuggestions]);
+
+  function selectProject(id: string) {
+    setProjectId(id);
+    setAnswer(null);
+    setIndexStatus(null);
+  }
+
+  async function handleAddProject() {
+    if (!addName.trim() || !addRepo.trim() || addingProject) return;
+    setAddingProject(true);
+    setAddError("");
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: addName,
+          ...(addMode === "git"
+            ? { gitUrl: addRepo, branch: addBranch.trim() || undefined }
+            : { rootPath: addRepo })
+        })
+      });
+      const data = (await res.json()) as {
+        project?: ProjectConfig;
+        index?: IndexStatus;
+        error?: string;
+      };
+      if (!res.ok || !data.project) throw new Error(data.error || "添加项目失败");
+      await loadProjects();
+      selectProject(data.project.id);
+      setIndexStatus(data.index ?? null);
+      setShowAddForm(false);
+      setAddName("");
+      setAddRepo("");
+      setAddBranch("");
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : "添加项目失败");
+    } finally {
+      setAddingProject(false);
+    }
+  }
+
+  async function handleDeleteProject(project: ProjectConfig, event: MouseEvent) {
+    // 阻止冒泡，避免触发外层的项目选中
+    event.stopPropagation();
+    if (!window.confirm(`确认删除项目「${project.name}」？本地索引和 clone 的仓库会一并清理。`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error || "删除项目失败");
+      }
+      const list = await loadProjects();
+      if (project.id === projectId) {
+        selectProject(list[0]?.id ?? "");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除项目失败");
+    }
+  }
 
   async function refreshIndex() {
     if (!projectId) return;
@@ -278,8 +363,74 @@ export function AssistantWorkbench() {
         <div className="sidebar-section">
           <div className="sidebar-label">
             <span>项目</span>
-            <span className="sidebar-count">{loadingProjects ? "…" : projects.length}</span>
+            <span className="sidebar-label-actions">
+              <span className="sidebar-count">{loadingProjects ? "…" : projects.length}</span>
+              <button
+                className="icon-button"
+                title={showAddForm ? "收起" : "添加项目"}
+                onClick={() => {
+                  setShowAddForm((open) => !open);
+                  setAddError("");
+                }}
+              >
+                {showAddForm ? <X size={14} /> : <Plus size={14} />}
+              </button>
+            </span>
           </div>
+
+          {showAddForm ? (
+            <div className="add-project-form">
+              <div className="add-mode-switch">
+                <button
+                  className="add-mode-chip"
+                  data-active={addMode === "git"}
+                  onClick={() => setAddMode("git")}
+                >
+                  Git 地址
+                </button>
+                <button
+                  className="add-mode-chip"
+                  data-active={addMode === "path"}
+                  onClick={() => setAddMode("path")}
+                >
+                  本地路径
+                </button>
+              </div>
+              <input
+                className="add-input"
+                placeholder="项目名称"
+                value={addName}
+                onChange={(event) => setAddName(event.target.value)}
+              />
+              <input
+                className="add-input"
+                placeholder={addMode === "git" ? "https://… 或 git@…" : "/path/to/your-frontend-repo"}
+                value={addRepo}
+                onChange={(event) => setAddRepo(event.target.value)}
+              />
+              {addMode === "git" ? (
+                <input
+                  className="add-input"
+                  placeholder="分支（可选，默认仓库默认分支）"
+                  value={addBranch}
+                  onChange={(event) => setAddBranch(event.target.value)}
+                />
+              ) : null}
+              {addError ? <div className="add-error">{addError}</div> : null}
+              <button
+                className="btn btn-primary add-submit"
+                onClick={handleAddProject}
+                disabled={addingProject || !addName.trim() || !addRepo.trim()}
+              >
+                {addingProject ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Plus size={14} />
+                )}
+                {addingProject ? "正在添加并建索引…" : "添加项目"}
+              </button>
+            </div>
+          ) : null}
 
           <div className="project-list">
             {loadingProjects ? (
@@ -291,22 +442,35 @@ export function AssistantWorkbench() {
               <div className="mode-row">暂无可用项目</div>
             ) : (
               projects.map((project) => (
-                <button
+                <div
                   key={project.id}
                   className="project-button"
                   data-active={project.id === projectId}
-                  onClick={() => {
-                    setProjectId(project.id);
-                    setAnswer(null);
-                    setIndexStatus(null);
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => selectProject(project.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      selectProject(project.id);
+                    }
                   }}
                 >
                   <span className="project-name">
                     <FolderGit2 size={15} />
                     {project.name}
+                    {project.source === "stored" ? (
+                      <button
+                        className="project-delete"
+                        title="删除项目"
+                        onClick={(event) => handleDeleteProject(project, event)}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    ) : null}
                   </span>
-                  <span className="project-path">{project.rootPath}</span>
-                </button>
+                  <span className="project-path">{project.gitUrl ?? project.rootPath}</span>
+                </div>
               ))
             )}
           </div>

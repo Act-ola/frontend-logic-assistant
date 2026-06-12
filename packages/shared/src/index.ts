@@ -1,12 +1,19 @@
 import { z } from "zod";
 
+/** 项目来源：env=环境变量配置（只读）；stored=UI 添加并持久化（可删）；builtin=内置 demo */
+export const ProjectSourceSchema = z.enum(["env", "stored", "builtin"]);
+
+export type ProjectSource = z.infer<typeof ProjectSourceSchema>;
+
 export const ProjectConfigSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   rootPath: z.string().min(1),
   branch: z.string().optional(),
   description: z.string().optional(),
-  aliases: z.record(z.string(), z.string()).optional()
+  aliases: z.record(z.string(), z.string()).optional(),
+  gitUrl: z.string().optional(),
+  source: ProjectSourceSchema.optional()
 });
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

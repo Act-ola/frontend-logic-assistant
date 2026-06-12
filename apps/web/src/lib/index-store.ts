@@ -1,5 +1,5 @@
 import type { ProjectIndex } from "@frontend-logic/shared";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { workspaceRoot } from "./workspace";
 
@@ -19,6 +19,10 @@ export async function loadIndex(projectId: string): Promise<ProjectIndex | null>
   } catch {
     return null;
   }
+}
+
+export async function deleteIndex(projectId: string) {
+  await rm(indexPath(projectId), { force: true });
 }
 
 function indexPath(projectId: string) {
