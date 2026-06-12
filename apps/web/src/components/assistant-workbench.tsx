@@ -237,16 +237,15 @@ export function AssistantWorkbench() {
       setPreviewLoading(false);
       return;
     }
-    const entry =
-      answer.relatedFiles.find((file) => /\.(jsx|tsx)$/.test(file)) ?? answer.relatedFiles[0];
     let cancelled = false;
     setPreviewLoading(true);
     setPreviewError("");
     setPreviewBundle(null);
+    // 把全部相关文件交给服务端做路由感知选择：优先渲染问题真正命中的页面组件
     fetch("/api/preview-bundle", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, entry })
+      body: JSON.stringify({ projectId, candidates: answer.relatedFiles })
     })
       .then(async (res) => {
         if (!res.ok) throw new Error(await res.text());

@@ -11,7 +11,7 @@ export async function saveIndex(index: ProjectIndex) {
   await mkdir(indexDir(), { recursive: true });
   // 先写临时文件再 rename 原子落盘，避免并发重建/读取时出现截断的 JSON
   const target = indexPath(index.project.id);
-  const tmp = `${target}.tmp-${process.pid}-${Date.now()}`;
+  const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await writeFile(tmp, JSON.stringify(index, null, 2), "utf8");
   await rename(tmp, target);
 }

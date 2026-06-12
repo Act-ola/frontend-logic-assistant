@@ -11,8 +11,10 @@ import type {
   LogicFact,
   LogicFactType,
   ProjectConfig,
-  ProjectIndex
+  ProjectIndex,
+  RouteEntry
 } from "@frontend-logic/shared";
+import { INDEX_SCHEMA_VERSION } from "@frontend-logic/shared";
 
 const traverse = (
   traverseImport as unknown as {
@@ -41,6 +43,7 @@ const IGNORE_GLOBS = [
 type ParseResult = {
   file: IndexedFile;
   facts: LogicFact[];
+  routes: Omit<RouteEntry, "filePath">[];
 };
 
 export async function analyzeProject(project: ProjectConfig): Promise<ProjectIndex> {
@@ -66,13 +69,24 @@ export async function analyzeProject(project: ProjectConfig): Promise<ProjectInd
 
   const validParsed = parsed.filter((item): item is ParseResult => item !== null);
   const facts = validParsed.flatMap((item) => item.facts);
+  const files = validParsed.map((item) => item.file);
+
+  // 路由组件按组件名在文件表中反查所在文件，供路由感知渲染定位页面入口
+  const routes: RouteEntry[] = validParsed
+    .flatMap((item) => item.routes)
+    .map((route) => ({
+      ...route,
+      filePath: files.find((file) => file.components.includes(route.componentName))?.filePath
+    }));
 
   return {
     project,
     generatedAt: new Date().toISOString(),
-    files: validParsed.map((item) => item.file),
+    schemaVersion: INDEX_SCHEMA_VERSION,
+    files,
     facts,
-    flows: buildInteractionFlows(facts)
+    flows: buildInteractionFlows(facts),
+    routes
   };
 }
 
@@ -96,6 +110,7 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
   const exports = new Set<string>();
   const components = new Set<string>();
   const facts: LogicFact[] = [];
+  const routesFound: Omit<RouteEntry, "filePath">[] = [];
 
   const addFact = (
     type: LogicFactType,
@@ -128,6 +143,7 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
       componentName: findComponentName(pathRef),
       type,
       eventName: options.eventName,
+      enclosingFunction: findEnclosingFunctionName(pathRef),
       targetText: compact(options.targetText),
       expression: compact(options.expression),
       summary: options.summary,
@@ -326,6 +342,28 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
           confidence: "low"
         });
       }
+    },
+    // 路由抽取一：配置对象数组形式，如 { path: "/orders", name: "订单列表", component: OrderList }
+    ObjectExpression(pathRef) {
+      const route = routeFromObject(pathRef.node);
+      if (route) {
+        routesFound.push({
+          ...route,
+          sourceFilePath: filePath,
+          line: pathRef.node.loc?.start.line ?? 1
+        });
+      }
+    },
+    // 路由抽取二：JSX 形式，如 <Route path="/orders" element={<OrderList />} />
+    JSXElement(pathRef) {
+      const route = routeFromJsxRoute(pathRef.node);
+      if (route) {
+        routesFound.push({
+          ...route,
+          sourceFilePath: filePath,
+          line: pathRef.node.loc?.start.line ?? 1
+        });
+      }
     }
   });
 
@@ -338,8 +376,91 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
       components: Array.from(components),
       codePreview: code.split("\n").slice(0, 12).join("\n")
     },
-    facts: dedupeFacts(facts)
+    facts: dedupeFacts(facts),
+    routes: routesFound
   };
+}
+
+/** 从配置对象中识别路由：要求 path 为 "/" 开头的字符串字面量，且有 component/element 指向组件 */
+function routeFromObject(
+  node: t.ObjectExpression
+): Pick<RouteEntry, "routePath" | "name" | "componentName"> | null {
+  let routePath: string | undefined;
+  let name: string | undefined;
+  let componentName: string | undefined;
+
+  for (const property of node.properties) {
+    if (!t.isObjectProperty(property) || !t.isIdentifier(property.key)) continue;
+    const key = property.key.name;
+    if (key === "path" && t.isStringLiteral(property.value) && property.value.value.startsWith("/")) {
+      routePath = property.value.value;
+    }
+    if (key === "name" && t.isStringLiteral(property.value)) {
+      name = property.value.value;
+    }
+    if (key === "component" || key === "element") {
+      componentName = componentNameFromValue(property.value);
+    }
+  }
+
+  if (!routePath || !componentName) return null;
+  return { routePath, name, componentName };
+}
+
+/** 从 <Route path="..." element={<X/>}/> 中识别路由 */
+function routeFromJsxRoute(
+  node: t.JSXElement
+): Pick<RouteEntry, "routePath" | "componentName"> | null {
+  const opening = node.openingElement;
+  if (!t.isJSXIdentifier(opening.name) || opening.name.name !== "Route") return null;
+
+  let routePath: string | undefined;
+  let componentName: string | undefined;
+  for (const attr of opening.attributes) {
+    if (!t.isJSXAttribute(attr) || !t.isJSXIdentifier(attr.name)) continue;
+    if (attr.name.name === "path" && t.isStringLiteral(attr.value)) {
+      routePath = attr.value.value;
+    }
+    if (["element", "component", "render"].includes(attr.name.name) && attr.value) {
+      if (t.isJSXExpressionContainer(attr.value)) {
+        componentName = componentNameFromValue(attr.value.expression);
+      }
+    }
+  }
+
+  if (!routePath || !componentName) return null;
+  return { routePath, componentName };
+}
+
+function componentNameFromValue(node: t.Node): string | undefined {
+  if (t.isIdentifier(node)) return node.name;
+  if (t.isJSXElement(node) && t.isJSXIdentifier(node.openingElement.name)) {
+    return node.openingElement.name.name;
+  }
+  return undefined;
+}
+
+/** 向上找最近的具名函数（不限组件大写命名），用于把接口调用归属到 service 函数 */
+function findEnclosingFunctionName(pathRef: NodePath<t.Node>): string | undefined {
+  let current: NodePath<t.Node> | null = pathRef;
+  while (current) {
+    if (current.isFunctionDeclaration() && current.node.id?.name) {
+      return current.node.id.name;
+    }
+    if (
+      current.isVariableDeclarator() &&
+      current.node.init &&
+      (t.isArrowFunctionExpression(current.node.init) || t.isFunctionExpression(current.node.init))
+    ) {
+      const name = variableName(current.node.id);
+      if (name) return name;
+    }
+    if ((current.isObjectMethod() || current.isClassMethod()) && t.isIdentifier(current.node.key)) {
+      return current.node.key.name;
+    }
+    current = current.parentPath;
+  }
+  return undefined;
 }
 
 function isComponentName(name: string) {

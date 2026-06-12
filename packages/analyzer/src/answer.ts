@@ -1,14 +1,26 @@
 import type { InteractionFlow, LogicAnswer, LogicFact, ProjectIndex } from "@frontend-logic/shared";
 import { formatFlowSteps, isFlowQuestion, matchFlows } from "./flows";
+import {
+  buildApiInventory,
+  formatApiInventory,
+  isApiInventoryQuestion,
+  type PageApiGroup
+} from "./inventory";
 import { retrieveFacts } from "./retrieval";
 
 export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAnswer {
   const { facts, diagnostics } = retrieveFacts(index, question);
   const factFiles = facts.map((fact) => fact.filePath);
   const flows = matchFlows(index, question, factFiles);
+  // 接口清单类问题：从全量事实聚合（不受检索 limit 截断），并按问题中的页面线索过滤
+  const inventory = isApiInventoryQuestion(question) ? buildApiInventory(index, question) : [];
   const confidence = confidenceFromFacts(facts, diagnostics.matchedFacts);
   const relatedFiles = Array.from(
-    new Set([...flows.map((flow) => flow.filePath), ...factFiles])
+    new Set([
+      ...inventory.map((group) => group.filePath),
+      ...flows.map((flow) => flow.filePath),
+      ...factFiles
+    ])
   ).slice(0, 8);
   const evidence = facts.flatMap((fact) => fact.evidence).slice(0, 8);
 
@@ -21,12 +33,21 @@ export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAn
 
   return {
     question,
-    conclusion: flowConclusion(question, flows) ?? conclusionFor(question, facts, diagnostics.matchedFacts),
+    conclusion:
+      inventoryConclusion(inventory) ??
+      flowConclusion(question, flows) ??
+      conclusionFor(question, facts, diagnostics.matchedFacts),
     confidence:
-      flows.length > 0 && isFlowQuestion(question) && bestFlowConfidence === "high"
+      inventory.length > 0
         ? "high"
-        : confidence,
+        : flows.length > 0 && isFlowQuestion(question) && bestFlowConfidence === "high"
+          ? "high"
+          : confidence,
     sections: [
+      {
+        title: "接口清单",
+        items: formatApiInventory(inventory).slice(0, 24)
+      },
       {
         title: "交互流程",
         items: flows
@@ -71,6 +92,19 @@ export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAn
       queryTerms: diagnostics.queryTerms
     }
   };
+}
+
+/** 接口清单类问题命中时，生成汇总结论 */
+function inventoryConclusion(inventory: PageApiGroup[]): string | null {
+  if (inventory.length === 0) return null;
+  const totalApis = inventory.reduce((sum, group) => sum + group.apis.length, 0);
+  const scope =
+    inventory.length === 1
+      ? `${inventory[0].filePath}${
+          inventory[0].components.length > 0 ? `（${inventory[0].components.join("、")}）` : ""
+        }`
+      : `${inventory.length} 个文件`;
+  return `${scope} 共发起 ${totalApis} 类接口调用，已在下方「接口清单」按文件列出（service 封装函数已解析为真实 URL）。`;
 }
 
 /** 流程类问题且命中链路时，生成"操作→接口→状态→页面"的步骤化结论 */

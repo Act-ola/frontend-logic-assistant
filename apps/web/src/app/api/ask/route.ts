@@ -1,4 +1,5 @@
 import { analyzeProject } from "@frontend-logic/analyzer";
+import { INDEX_SCHEMA_VERSION } from "@frontend-logic/shared";
 import { saveIndex, loadIndex } from "@/lib/index-store";
 import { streamAnswer } from "@/lib/ai-answer";
 import { projectById } from "@/lib/projects";
@@ -12,8 +13,8 @@ export async function POST(req: Request) {
 
   const project = projectById(body.projectId);
   let index = await loadIndex(project.id);
-  // flows === undefined 说明是没有交互链路字段的旧版索引，自动重建一次
-  if (!index || index.flows === undefined) {
+  // 版本号不一致说明索引结构过旧（缺 flows/routes 等字段），自动重建一次
+  if (!index || index.schemaVersion !== INDEX_SCHEMA_VERSION) {
     index = await analyzeProject(project);
     await saveIndex(index);
   }

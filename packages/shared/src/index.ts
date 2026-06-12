@@ -45,6 +45,8 @@ export type LogicFact = {
   type: LogicFactType;
   /** JSX 事件绑定事实的事件名（如 onClick），作为结构化标记供交互链路识别 */
   eventName?: string;
+  /** 事实所在的最近具名函数（不限组件），用于把 service 函数名映射到其中的接口 URL */
+  enclosingFunction?: string;
   targetText?: string;
   expression?: string;
   summary: string;
@@ -97,13 +99,38 @@ export type InteractionFlow = {
   confidence: "high" | "medium" | "low";
 };
 
+/**
+ * 索引结构版本号：新增字段（flows/routes/enclosingFunction 等）时 +1，
+ * 读取到旧版本索引的调用方应触发重建。
+ */
+export const INDEX_SCHEMA_VERSION = 2;
+
+/** 路由表条目：从 <Route path element> 或 routes 配置对象数组中抽取 */
+export type RouteEntry = {
+  /** 路由路径，如 /orders */
+  routePath: string;
+  /** 路由名称（配置中的 name 字段，若有） */
+  name?: string;
+  /** 路由对应的组件名 */
+  componentName: string;
+  /** 组件所在文件（按组件名在索引文件表中反查，可能缺失） */
+  filePath?: string;
+  /** 路由声明所在文件与行号 */
+  sourceFilePath: string;
+  line: number;
+};
+
 export type ProjectIndex = {
   project: ProjectConfig;
   generatedAt: string;
+  /** 索引结构版本（旧索引无此字段，视为过期） */
+  schemaVersion?: number;
   files: IndexedFile[];
   facts: LogicFact[];
   /** 交互链路（旧索引文件无此字段，读取时按 undefined 兼容） */
   flows?: InteractionFlow[];
+  /** 路由表：路由路径 → 页面组件，供路由感知渲染与问答定位页面 */
+  routes?: RouteEntry[];
 };
 
 export type AskRequest = {
