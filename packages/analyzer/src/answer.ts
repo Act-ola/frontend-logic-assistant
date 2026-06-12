@@ -1,17 +1,30 @@
-import type { LogicAnswer, LogicFact, ProjectIndex } from "@frontend-logic/shared";
+import type { InteractionFlow, LogicAnswer, LogicFact, ProjectIndex } from "@frontend-logic/shared";
+import { formatFlowSteps, isFlowQuestion, matchFlows } from "./flows";
 import { retrieveFacts } from "./retrieval";
 
 export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAnswer {
   const { facts, diagnostics } = retrieveFacts(index, question);
+  const factFiles = facts.map((fact) => fact.filePath);
+  const flows = matchFlows(index, question, factFiles);
   const confidence = confidenceFromFacts(facts, diagnostics.matchedFacts);
-  const relatedFiles = Array.from(new Set(facts.map((fact) => fact.filePath))).slice(0, 8);
+  const relatedFiles = Array.from(
+    new Set([...flows.map((flow) => flow.filePath), ...factFiles])
+  ).slice(0, 8);
   const evidence = facts.flatMap((fact) => fact.evidence).slice(0, 8);
 
   return {
     question,
-    conclusion: conclusionFor(question, facts, diagnostics.matchedFacts),
-    confidence,
+    conclusion: flowConclusion(question, flows) ?? conclusionFor(question, facts, diagnostics.matchedFacts),
+    confidence: flows.length > 0 && isFlowQuestion(question) ? "high" : confidence,
     sections: [
+      {
+        title: "交互流程",
+        items: flows.flatMap((flow, index_) =>
+          flows.length > 1
+            ? formatFlowSteps(flow).map((step) => `链路${index_ + 1} · ${step}`)
+            : formatFlowSteps(flow)
+        )
+      },
       {
         title: "判断条件",
         items: facts
@@ -46,6 +59,24 @@ export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAn
       queryTerms: diagnostics.queryTerms
     }
   };
+}
+
+/** 流程类问题且命中链路时，生成"操作→接口→状态→页面"的步骤化结论 */
+function flowConclusion(question: string, flows: InteractionFlow[]): string | null {
+  if (flows.length === 0 || !isFlowQuestion(question)) return null;
+  const flow = flows[0];
+  const parts: string[] = [`点击「${flow.trigger}」（${flow.eventName}）后`];
+  if (flow.handlerName) parts.push(`由 ${flow.handlerName} 处理`);
+  if (flow.apiCalls.length > 0) {
+    parts.push(`调用接口：${flow.apiCalls.map((api) => api.text).join("、")}`);
+  }
+  if (flow.stateChanges.length > 0) {
+    parts.push(`更新状态：${flow.stateChanges.map((state) => state.text).join("、")}`);
+  }
+  if (flow.affectedRenders.length > 0) {
+    parts.push(`页面上 ${flow.affectedRenders.length} 处展示随之变化`);
+  }
+  return `${parts.join("，")}。完整链路见下方「交互流程」，每一步都附了代码位置。`;
 }
 
 function conclusionFor(question: string, facts: LogicFact[], matchedFacts: number): string {

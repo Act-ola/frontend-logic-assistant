@@ -5,6 +5,7 @@ import * as t from "@babel/types";
 import fg from "fast-glob";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { buildInteractionFlows } from "./flows";
 import type {
   IndexedFile,
   LogicFact,
@@ -64,12 +65,14 @@ export async function analyzeProject(project: ProjectConfig): Promise<ProjectInd
   );
 
   const validParsed = parsed.filter((item): item is ParseResult => item !== null);
+  const facts = validParsed.flatMap((item) => item.facts);
 
   return {
     project,
     generatedAt: new Date().toISOString(),
     files: validParsed.map((item) => item.file),
-    facts: validParsed.flatMap((item) => item.facts)
+    facts,
+    flows: buildInteractionFlows(facts)
   };
 }
 
@@ -195,10 +198,15 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
         const callee = calleeName(pathRef.node.init.callee);
         if (callee === "useState") {
           const stateName = variableName(pathRef.node.id.elements[0]);
+          const setterName = variableName(pathRef.node.id.elements[1]);
           addFact("state", pathRef as NodePath<t.Node>, {
-            summary: `组件 state ${stateName ?? "unknown"} 由 useState 初始化。`,
+            summary: `组件 state ${stateName ?? "unknown"} 由 useState 初始化${
+              setterName ? `，通过 ${setterName} 更新` : ""
+            }。`,
             expression: expressionFor(code, pathRef.node.init),
             targetText: stateName,
+            // setter 名记入 dependencies，供交互链路把 handler 与 state 串起来
+            dependencies: setterName ? [setterName] : [],
             confidence: "high"
           });
         }

@@ -60,11 +60,48 @@ export type IndexedFile = {
   codePreview: string;
 };
 
+/** 交互链路中一步的代码引用 */
+export type FlowRef = {
+  filePath: string;
+  line: number;
+  /** 人话描述，如接口 URL、state 名、受影响的展示文案 */
+  text: string;
+};
+
+/**
+ * 交互链路：用户操作 → handler → 接口调用 → 状态变化 → 页面变化。
+ * 由静态分析在同文件事实间串联合成，用于回答"点击 X 之后会发生什么"类问题。
+ */
+export type InteractionFlow = {
+  id: string;
+  projectId: string;
+  filePath: string;
+  componentName?: string;
+  /** 触发控件文案（按钮、链接等） */
+  trigger: string;
+  /** 触发绑定所在行号 */
+  triggerLine: number;
+  /** 事件名，如 onClick / onSubmit */
+  eventName: string;
+  /** 处理函数名（可能为内联表达式而缺失） */
+  handlerName?: string;
+  handlerLine?: number;
+  /** handler 触发的接口调用 */
+  apiCalls: FlowRef[];
+  /** handler 改变的组件 state */
+  stateChanges: FlowRef[];
+  /** 受这些 state 影响的展示/可操作逻辑 */
+  affectedRenders: FlowRef[];
+  confidence: "high" | "medium" | "low";
+};
+
 export type ProjectIndex = {
   project: ProjectConfig;
   generatedAt: string;
   files: IndexedFile[];
   facts: LogicFact[];
+  /** 交互链路（旧索引文件无此字段，读取时按 undefined 兼容） */
+  flows?: InteractionFlow[];
 };
 
 export type AskRequest = {

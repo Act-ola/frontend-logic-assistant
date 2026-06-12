@@ -1,5 +1,12 @@
-import type { AskStreamEvent, AnswerTrace, LogicAnswer, LogicFact, ProjectIndex } from "@frontend-logic/shared";
-import { buildLocalAnswer, retrieveFacts } from "@frontend-logic/analyzer";
+import type {
+  AskStreamEvent,
+  AnswerTrace,
+  InteractionFlow,
+  LogicAnswer,
+  LogicFact,
+  ProjectIndex
+} from "@frontend-logic/shared";
+import { buildLocalAnswer, formatFlowSteps, matchFlows, retrieveFacts } from "@frontend-logic/analyzer";
 
 /**
  * 流式问答：依次产出
@@ -19,7 +26,8 @@ export async function* streamAnswer(
   const local = buildLocalAnswer(index, question);
   const useGateway = process.env.AI_MODE === "gateway" && facts.length > 0;
   const model = process.env.AI_MODEL || "deepseek-chat";
-  const evidence = buildEvidence(facts);
+  const flows = matchFlows(index, question, facts.map((fact) => fact.filePath), 4);
+  const evidence = buildEvidence(facts) + buildFlowEvidence(flows);
 
   // 1) 先下发调用详情，面板可在思考开始前就展示模型/查询词/命中情况
   const baseTrace: AnswerTrace = {
@@ -60,7 +68,7 @@ export async function* streamAnswer(
     const thinkingStream = streamText({
       model: deepseek(model),
       system:
-        "你是企业内部前端逻辑分析师。基于提供的代码证据，围绕用户问题逐步推理：先定位相关的判断条件、数据来源与交互入口，再一步步推导出结论。用中文、分点、口语化地把思考过程讲出来，像在边想边说；不要输出 HTML，也不要急着给最终结论。",
+        "你是企业内部前端逻辑分析师。基于提供的代码证据，围绕用户问题逐步推理：先定位相关的判断条件、数据来源与交互入口，再一步步推导出结论。如果证据中包含交互链路，回答流程类问题时按『用户操作 → 调用接口 → 状态变化 → 页面变化』的顺序逐步展开。用中文、分点、口语化地把思考过程讲出来，像在边想边说；不要输出 HTML，也不要急着给最终结论。",
       prompt: `用户问题：${question}\n\n代码证据：\n${evidence}\n\n请逐步思考并分析。`
     });
 
@@ -100,6 +108,18 @@ export async function* streamAnswer(
     };
     yield { type: "answer", answer };
   }
+}
+
+/**
+ * 把命中的交互链路压成证据文本附在事实证据之后，
+ * 让模型回答"点了之后会发生什么"时能按 操作→接口→状态→页面 讲完整流程。
+ */
+function buildFlowEvidence(flows: InteractionFlow[]): string {
+  if (flows.length === 0) return "";
+  const digest = flows
+    .map((flow, i) => `链路#${i + 1}（置信度 ${flow.confidence}）\n${formatFlowSteps(flow).join("\n")}`)
+    .join("\n\n");
+  return `\n\n交互链路（静态分析串联的 操作→接口→状态→页面）：\n${digest}`;
 }
 
 /** 把命中的逻辑事实压成喂给模型的证据文本。 */
