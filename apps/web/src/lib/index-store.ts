@@ -1,5 +1,5 @@
 import type { ProjectIndex } from "@frontend-logic/shared";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { workspaceRoot } from "./workspace";
 
@@ -9,7 +9,11 @@ function indexDir() {
 
 export async function saveIndex(index: ProjectIndex) {
   await mkdir(indexDir(), { recursive: true });
-  await writeFile(indexPath(index.project.id), JSON.stringify(index, null, 2), "utf8");
+  // 先写临时文件再 rename 原子落盘，避免并发重建/读取时出现截断的 JSON
+  const target = indexPath(index.project.id);
+  const tmp = `${target}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(tmp, JSON.stringify(index, null, 2), "utf8");
+  await rename(tmp, target);
 }
 
 export async function loadIndex(projectId: string): Promise<ProjectIndex | null> {
