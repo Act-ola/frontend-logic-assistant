@@ -12,7 +12,8 @@ export async function POST(req: Request) {
 
   const project = projectById(body.projectId);
   let index = await loadIndex(project.id);
-  if (!index) {
+  // flows === undefined 说明是没有交互链路字段的旧版索引，自动重建一次
+  if (!index || index.flows === undefined) {
     index = await analyzeProject(project);
     await saveIndex(index);
   }

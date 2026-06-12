@@ -98,14 +98,13 @@ export function buildInteractionFlows(facts: LogicFact[]): InteractionFlow[] {
   return flows;
 }
 
-/** JSX onXxx 绑定事实（区别于具名 handler 函数事实）：见 scan.ts JSXAttribute 访问器 */
+/** JSX onXxx 绑定事实（区别于具名 handler 函数事实）：以结构化 eventName 字段为准 */
 function isJsxEventBinding(fact: LogicFact): boolean {
-  return fact.type === "event_handler" && /^交互事件 on/.test(fact.summary);
+  return fact.type === "event_handler" && Boolean(fact.eventName);
 }
 
-/** 从 scan.ts 生成的 summary（`交互事件 onXxx 绑定了处理逻辑。`）中提取事件名 */
 function eventNameOf(fact: LogicFact): string {
-  return /^交互事件 (on\w+)/.exec(fact.summary)?.[1] ?? "onClick";
+  return fact.eventName ?? "onClick";
 }
 
 function looksLikeHandlerName(name: string): boolean {
@@ -164,20 +163,22 @@ export function matchFlows(
 
   return flows
     .map((flow) => {
-      let score = 0;
+      // matchScore：trigger/handler 实际命中分，决定是否入选
+      let matchScore = 0;
       if (flow.trigger && question.includes(flow.trigger)) {
-        score += 10;
+        matchScore += 10;
       } else if (flow.trigger) {
-        score += longestSharedFragment(question, flow.trigger);
+        matchScore += longestSharedFragment(question, flow.trigger);
       }
       if (flow.handlerName && question.toLowerCase().includes(flow.handlerName.toLowerCase())) {
-        score += 8;
+        matchScore += 8;
       }
-      if (files.has(flow.filePath)) score += 2;
-      return { flow, score };
+      // 文件加分只参与排序，不让同文件弱相关链路混入回答
+      const rankScore = matchScore + (files.has(flow.filePath) ? 2 : 0);
+      return { flow, matchScore, rankScore };
     })
-    .filter((item) => (intent ? item.score > 0 : item.score >= 6))
-    .sort((a, b) => b.score - a.score)
+    .filter((item) => (intent ? item.matchScore > 0 : item.matchScore >= 6))
+    .sort((a, b) => b.rankScore - a.rankScore)
     .slice(0, limit)
     .map((item) => item.flow);
 }

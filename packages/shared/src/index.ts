@@ -43,6 +43,8 @@ export type LogicFact = {
   line: number;
   componentName?: string;
   type: LogicFactType;
+  /** JSX 事件绑定事实的事件名（如 onClick），作为结构化标记供交互链路识别 */
+  eventName?: string;
   targetText?: string;
   expression?: string;
   summary: string;

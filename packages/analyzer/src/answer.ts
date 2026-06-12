@@ -12,18 +12,30 @@ export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAn
   ).slice(0, 8);
   const evidence = facts.flatMap((fact) => fact.evidence).slice(0, 8);
 
+  // 流程类问题命中链路时，整体置信度以链路自身置信度为上限，弱链路不冒充高置信
+  const bestFlowConfidence = flows.some((flow) => flow.confidence === "high")
+    ? "high"
+    : flows.some((flow) => flow.confidence === "medium")
+      ? "medium"
+      : "low";
+
   return {
     question,
     conclusion: flowConclusion(question, flows) ?? conclusionFor(question, facts, diagnostics.matchedFacts),
-    confidence: flows.length > 0 && isFlowQuestion(question) ? "high" : confidence,
+    confidence:
+      flows.length > 0 && isFlowQuestion(question) && bestFlowConfidence === "high"
+        ? "high"
+        : confidence,
     sections: [
       {
         title: "交互流程",
-        items: flows.flatMap((flow, index_) =>
-          flows.length > 1
-            ? formatFlowSteps(flow).map((step) => `链路${index_ + 1} · ${step}`)
-            : formatFlowSteps(flow)
-        )
+        items: flows
+          .flatMap((flow, index_) =>
+            flows.length > 1
+              ? formatFlowSteps(flow).map((step) => `链路${index_ + 1} · ${step}`)
+              : formatFlowSteps(flow)
+          )
+          .slice(0, 12)
       },
       {
         title: "判断条件",

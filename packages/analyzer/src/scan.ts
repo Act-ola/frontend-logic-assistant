@@ -106,6 +106,7 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
       targetText?: string;
       dependencies?: string[];
       confidence?: LogicFact["confidence"];
+      eventName?: string;
     }
   ) => {
     const line = pathRef.node.loc?.start.line ?? 1;
@@ -126,6 +127,7 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
       line,
       componentName: findComponentName(pathRef),
       type,
+      eventName: options.eventName,
       targetText: compact(options.targetText),
       expression: compact(options.expression),
       summary: options.summary,
@@ -279,7 +281,9 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
           expression: jsxAttributeValue(code, pathRef.node.value),
           targetText: nearestJsxText(pathRef),
           dependencies: dependencyNames(pathRef.node.value),
-          confidence: "medium"
+          confidence: "medium",
+          // 结构化记录事件名，交互链路识别不再依赖 summary 文案
+          eventName: name
         });
       }
     },
