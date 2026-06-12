@@ -8,32 +8,35 @@
 :root {
   color-scheme: dark;
 
-  /* Background layers */
-  --bg-base: #090b0d;
-  --bg-canvas: #0d1013;
-  --bg-sidebar: #0a0c0e;
+  /* Background layers（深空底，流体 canvas 透出） */
+  --bg-base: #04060e;
+  --bg-canvas: rgba(6, 9, 20, 0.45);
+  --bg-sidebar: rgba(6, 9, 20, 0.62);
 
-  /* Surfaces */
-  --surface: #14181b;
-  --surface-hover: #181e21;
-  --surface-raised: #1b2226;
-  --surface-inset: rgba(0, 0, 0, 0.25);
+  /* Surfaces（玻璃拟态半透明面） */
+  --surface: rgba(15, 20, 38, 0.55);
+  --surface-hover: rgba(28, 36, 64, 0.6);
+  --surface-raised: rgba(34, 44, 78, 0.6);
+  --surface-inset: rgba(0, 0, 0, 0.35);
 
   /* Borders */
-  --border: rgba(238, 242, 242, 0.08);
-  --border-strong: rgba(238, 242, 242, 0.14);
+  --border: rgba(148, 184, 255, 0.12);
+  --border-strong: rgba(148, 184, 255, 0.22);
 
   /* Text */
-  --text: #e9eeec;
-  --text-muted: #98a19d;
-  --text-subtle: #6a726f;
+  --text: #eaf0ff;
+  --text-muted: #93a0c4;
+  --text-subtle: #5d6a8f;
 
-  /* Brand accent (mint) */
-  --accent: #6fe0b0;
-  --accent-strong: #54d39e;
-  --accent-ink: #06120d;
-  --accent-soft: rgba(111, 224, 176, 0.12);
-  --accent-border: rgba(111, 224, 176, 0.32);
+  /* Brand accent（电光青 → 紫 → 品红） */
+  --accent: #22d3ee;
+  --accent-strong: #0ec1de;
+  --accent-ink: #03121c;
+  --accent-soft: rgba(34, 211, 238, 0.12);
+  --accent-border: rgba(34, 211, 238, 0.38);
+  --violet: #8b5cf6;
+  --magenta: #e879f9;
+  --gradient-accent: linear-gradient(135deg, #22d3ee, #8b5cf6 55%, #e879f9);
 
   /* Semantic */
   --blue: #7fb5ff;
@@ -42,15 +45,16 @@
   --success: #5fd3a0;
 
   /* Radius */
-  --radius-sm: 7px;
-  --radius: 11px;
-  --radius-lg: 16px;
+  --radius-sm: 9px;
+  --radius: 13px;
+  --radius-lg: 20px;
   --radius-pill: 999px;
 
   /* Shadow */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow: 0 18px 48px -28px rgba(0, 0, 0, 0.85);
-  --shadow-lg: 0 32px 80px -40px rgba(0, 0, 0, 0.9);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow: 0 24px 60px -30px rgba(3, 8, 28, 0.9);
+  --shadow-lg: 0 40px 110px -42px rgba(3, 8, 28, 0.95);
+  --glow-accent: 0 0 24px rgba(34, 211, 238, 0.35), 0 0 64px rgba(139, 92, 246, 0.18);
 }
 
 * {
@@ -66,7 +70,7 @@ body {
   margin: 0;
   color: var(--text);
   background:
-    radial-gradient(1200px 600px at 78% -10%, rgba(111, 224, 176, 0.06), transparent 60%),
+    radial-gradient(1200px 600px at 78% -10%, rgba(34, 211, 238, 0.06), transparent 60%),
     radial-gradient(900px 520px at 0% 0%, rgba(127, 181, 255, 0.05), transparent 55%),
     var(--bg-base);
   font-family: var(--font-sans);
@@ -86,7 +90,7 @@ button {
 }
 
 ::selection {
-  background: rgba(111, 224, 176, 0.28);
+  background: rgba(34, 211, 238, 0.28);
 }
 
 ::-webkit-scrollbar {
@@ -107,10 +111,56 @@ button {
 }
 
 /* ------------------------------------------------------------------ */
+/* Fluid background（3D 流体层）                                        */
+/* ------------------------------------------------------------------ */
+
+.fluid-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg-base);
+}
+
+.fluid-bg-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* 大半径模糊把发光团融成流体，saturate 提升霓虹感 */
+  filter: blur(64px) saturate(150%);
+  transform: translateZ(0);
+}
+
+.fluid-bg-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(148, 184, 255, 0.025) 0,
+      rgba(148, 184, 255, 0.025) 1px,
+      transparent 1px,
+      transparent 56px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(148, 184, 255, 0.025) 0,
+      rgba(148, 184, 255, 0.025) 1px,
+      transparent 1px,
+      transparent 56px
+    ),
+    radial-gradient(120% 90% at 50% 10%, transparent 40%, rgba(2, 4, 12, 0.55) 100%);
+}
+
+/* ------------------------------------------------------------------ */
 /* Shell                                                               */
 /* ------------------------------------------------------------------ */
 
 .app-shell {
+  position: relative;
+  z-index: 1;
   height: 100vh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -127,6 +177,8 @@ button {
   height: 100vh;
   border-right: 1px solid var(--border);
   background: var(--bg-sidebar);
+  backdrop-filter: blur(26px) saturate(150%);
+  -webkit-backdrop-filter: blur(26px) saturate(150%);
   padding: 20px 16px;
   overflow-y: auto;
 }
@@ -139,16 +191,38 @@ button {
 }
 
 .brand-mark {
+  position: relative;
   width: 38px;
   height: 38px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
   border-radius: var(--radius);
-  border: 1px solid var(--accent-border);
-  background: linear-gradient(160deg, rgba(111, 224, 176, 0.22), rgba(111, 224, 176, 0.05));
+  background:
+    linear-gradient(160deg, rgba(8, 12, 26, 0.9), rgba(8, 12, 26, 0.75)) padding-box,
+    conic-gradient(from var(--brand-spin, 0deg), #22d3ee, #8b5cf6, #e879f9, #22d3ee) border-box;
+  border: 1px solid transparent;
   color: var(--accent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: var(--glow-accent);
+  animation: brand-spin 6s linear infinite;
+}
+
+@property --brand-spin {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes brand-spin {
+  to {
+    --brand-spin: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark {
+    animation: none;
+  }
 }
 
 .brand-title {
@@ -441,8 +515,9 @@ button {
   gap: 20px;
   padding: 16px 32px;
   border-bottom: 1px solid var(--border);
-  background: rgba(13, 16, 19, 0.78);
-  backdrop-filter: blur(12px);
+  background: rgba(5, 8, 18, 0.55);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
 }
 
 .topbar-titles {
@@ -474,6 +549,10 @@ button {
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #eaf0ff 30%, #9bd9ff 70%, #c4b5fd);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .status-strip {
@@ -503,7 +582,11 @@ button {
 }
 
 .intro-heading .accent-text {
-  color: var(--accent);
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 18px rgba(139, 92, 246, 0.45));
 }
 
 .page-copy {
@@ -588,14 +671,27 @@ button {
 /* ------------------------------------------------------------------ */
 
 .query-card {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* 卡片顶部一道流光描边 */
+.query-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px -1px auto;
+  height: 1px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.7), rgba(139, 92, 246, 0.7), transparent);
 }
 
 .query-row {
@@ -612,7 +708,7 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   outline: none;
-  background: var(--bg-base);
+  background: rgba(4, 7, 16, 0.6);
   color: var(--text);
   padding: 14px 16px;
   line-height: 1.6;
@@ -626,7 +722,7 @@ button {
 
 .query-input:focus {
   border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px rgba(111, 224, 176, 0.1);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.1);
 }
 
 .query-actions {
@@ -652,13 +748,18 @@ button {
 }
 
 .btn-primary {
-  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
-  color: var(--accent-ink);
-  box-shadow: 0 8px 22px -12px rgba(111, 224, 176, 0.7);
+  background: var(--gradient-accent);
+  background-size: 160% 160%;
+  color: #051018;
+  font-weight: 680;
+  box-shadow: 0 10px 30px -12px rgba(34, 211, 238, 0.65), 0 4px 24px -8px rgba(139, 92, 246, 0.4);
+  transition: background-position 0.4s ease, transform 0.16s ease, box-shadow 0.16s ease;
 }
 
 .btn-primary:hover:not(:disabled) {
-  filter: brightness(1.06);
+  background-position: 100% 50%;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 38px -12px rgba(34, 211, 238, 0.8), 0 6px 30px -8px rgba(232, 121, 249, 0.45);
 }
 
 .btn-secondary {
@@ -719,15 +820,16 @@ button {
   border-radius: var(--radius-pill);
   padding: 7px 13px;
   color: var(--text-muted);
-  background: var(--bg-base);
+  background: rgba(8, 12, 26, 0.5);
   font-size: 12.5px;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .chip:hover {
   background: var(--surface-hover);
   border-color: var(--accent-border);
   color: var(--text);
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.18);
 }
 
 /* ------------------------------------------------------------------ */
@@ -754,6 +856,8 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
   overflow: hidden;
 }
 
@@ -1041,7 +1145,9 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   overflow: hidden;
 }
 
