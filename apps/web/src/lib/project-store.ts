@@ -1,7 +1,22 @@
 import { ProjectConfigSchema, type ProjectConfig } from "@frontend-logic/shared";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { workspaceRoot } from "./workspace";
+
+let storeLock: Promise<unknown> = Promise.resolve();
+
+/**
+ * 串行化对项目配置的读-改-写，避免并发请求互相覆盖 projects.json
+ * 或生成重复的项目 id（单进程内有效，足够当前部署形态）。
+ */
+export function withProjectStoreLock<T>(task: () => Promise<T> | T): Promise<T> {
+  const run = storeLock.then(task, task);
+  storeLock = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
 
 /**
  * UI 添加的项目持久化在 .logic-assistant/projects.json，
@@ -19,11 +34,18 @@ export function clonedReposDir() {
 }
 
 export function listStoredProjects(): ProjectConfig[] {
+  if (!existsSync(storePath())) return [];
   try {
     const raw = readFileSync(storePath(), "utf8");
     const parsed = ProjectConfigSchema.array().parse(JSON.parse(raw));
     return parsed.map((project) => ({ ...project, source: "stored" as const }));
-  } catch {
+  } catch (err) {
+    // 文件损坏时不要静默吞掉，留下排查线索
+    console.warn(
+      `[Logic Assistant] projects.json 读取失败，已忽略其中配置：${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
     return [];
   }
 }
@@ -64,7 +86,11 @@ export function generateProjectId(name: string, taken: Set<string>): string {
 }
 
 function persist(projects: ProjectConfig[]) {
-  const dir = path.dirname(storePath());
+  const target = storePath();
+  const dir = path.dirname(target);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(storePath(), JSON.stringify(projects, null, 2), "utf8");
+  // 先写临时文件再 rename，保证原子写入，进程中断不会截断配置
+  const tmp = `${target}.tmp`;
+  writeFileSync(tmp, JSON.stringify(projects, null, 2), "utf8");
+  renameSync(tmp, target);
 }

@@ -164,12 +164,16 @@ export function AssistantWorkbench() {
       const data = (await res.json()) as {
         project?: ProjectConfig;
         index?: IndexStatus;
+        indexError?: string;
         error?: string;
       };
       if (!res.ok || !data.project) throw new Error(data.error || "添加项目失败");
       await loadProjects();
       selectProject(data.project.id);
       setIndexStatus(data.index ?? null);
+      if (data.indexError) {
+        setError(`项目已添加，但首次索引失败：${data.indexError}。可点击「刷新索引」重试。`);
+      }
       setShowAddForm(false);
       setAddName("");
       setAddRepo("");

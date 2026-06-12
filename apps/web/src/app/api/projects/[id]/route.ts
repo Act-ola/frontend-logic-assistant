@@ -1,5 +1,5 @@
 import { deleteIndex } from "@/lib/index-store";
-import { clonedReposDir, removeStoredProject } from "@/lib/project-store";
+import { clonedReposDir, removeStoredProject, withProjectStoreLock } from "@/lib/project-store";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
@@ -11,7 +11,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
   }
 
   // 只有 stored 项目可删；env/builtin 项目不在 projects.json 里，这里会返回 null
-  const removed = removeStoredProject(id);
+  const removed = await withProjectStoreLock(() => removeStoredProject(id));
   if (!removed) {
     return NextResponse.json(
       { error: "项目不存在或不可删除（环境变量配置与内置项目为只读）" },
