@@ -19,21 +19,34 @@ export type PageApiGroup = {
   apis: ApiUsage[];
 };
 
+export type ApiInventoryResult = {
+  groups: PageApiGroup[];
+  /** 问题中的页面线索是否命中过滤；false 表示未定位到页面、回退为全项目清单 */
+  pageMatched: boolean;
+};
+
 const API_INVENTORY_INTENT = /哪些接口|什么接口|接口清单|接口列表|调用了哪些|调了哪些|依赖哪些|哪些请求|哪些\s*api/i;
 
 export function isApiInventoryQuestion(question: string): boolean {
   return API_INVENTORY_INTENT.test(question);
 }
 
-export function buildApiInventory(index: ProjectIndex, question?: string): PageApiGroup[] {
+export function buildApiInventory(index: ProjectIndex, question?: string): ApiInventoryResult {
   const apiFacts = index.facts.filter((fact) => fact.type === "api_call");
-  if (apiFacts.length === 0) return [];
+  if (apiFacts.length === 0) return { groups: [], pageMatched: false };
 
-  // service 映射：函数名 -> METHOD URL（仅 URL 是字符串字面量的调用才能建立映射）
-  const serviceMap = new Map<string, string>();
+  // service 映射：函数名 -> METHOD URL（仅 URL 是字符串字面量的调用才能建立映射）；
+  // 同名函数映射到不同 URL 时标记为冲突（null），不做解析，避免跨模块同名封装映射错接口
+  const serviceMap = new Map<string, string | null>();
   for (const fact of apiFacts) {
     if (fact.enclosingFunction && fact.targetText) {
-      serviceMap.set(fact.enclosingFunction, `${methodOf(fact)} ${fact.targetText}`.trim());
+      const label = `${methodOf(fact)} ${fact.targetText}`.trim();
+      const existing = serviceMap.get(fact.enclosingFunction);
+      if (existing === undefined) {
+        serviceMap.set(fact.enclosingFunction, label);
+      } else if (existing !== label) {
+        serviceMap.set(fact.enclosingFunction, null);
+      }
     }
   }
 
@@ -57,24 +70,32 @@ export function buildApiInventory(index: ProjectIndex, question?: string): PageA
 
   let result = Array.from(groups.values()).filter((group) => group.apis.length > 0);
 
-  // 问题中带页面线索（文件名/组件名/路由名）时只保留命中的文件
+  // 问题中带页面线索（文件名/组件名/路由名）时只保留命中的文件；
+  // 零命中时回退全项目清单，并通过 pageMatched=false 让结论如实说明
+  let pageMatched = false;
   if (question) {
     const filtered = result.filter((group) => matchesQuestion(group, question, index));
-    if (filtered.length > 0) result = filtered;
+    if (filtered.length > 0) {
+      result = filtered;
+      pageMatched = true;
+    }
   }
 
-  return result.sort((a, b) => b.apis.length - a.apis.length).slice(0, 8);
+  return {
+    groups: result.sort((a, b) => b.apis.length - a.apis.length).slice(0, 8),
+    pageMatched
+  };
 }
 
-function labelFor(fact: LogicFact, serviceMap: Map<string, string>): string | null {
+function labelFor(fact: LogicFact, serviceMap: Map<string, string | null>): string | null {
   // 1. 直接带 URL 字符串的调用
   if (fact.targetText) return `${methodOf(fact)} ${fact.targetText}`.trim();
 
   // 2. 调用 service 封装函数：解析出封装内的真实接口；
   //    callee 链逐段尝试（getOrderList(...).then 的 callee 是 "getOrderList.then"），
-  //    让链式调用归并到同一条已解析记录
+  //    让链式调用归并到同一条已解析记录；冲突（null）的不解析
   const callee = fact.dependencies[0] ?? "";
-  const hit = callee.split(".").find((segment) => serviceMap.has(segment));
+  const hit = callee.split(".").find((segment) => typeof serviceMap.get(segment) === "string");
   if (hit) {
     return `${hit} → ${serviceMap.get(hit)}`;
   }

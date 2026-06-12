@@ -40,10 +40,15 @@ const IGNORE_GLOBS = [
   "**/*.spec.*"
 ];
 
+type ParsedRoute = Omit<RouteEntry, "filePath"> & {
+  /** 路由组件在声明文件中的 import 来源（相对路径），用于精确定位组件文件 */
+  importSource?: string;
+};
+
 type ParseResult = {
   file: IndexedFile;
   facts: LogicFact[];
-  routes: Omit<RouteEntry, "filePath">[];
+  routes: ParsedRoute[];
 };
 
 export async function analyzeProject(project: ProjectConfig): Promise<ProjectIndex> {
@@ -71,12 +76,15 @@ export async function analyzeProject(project: ProjectConfig): Promise<ProjectInd
   const facts = validParsed.flatMap((item) => item.facts);
   const files = validParsed.map((item) => item.file);
 
-  // 路由组件按组件名在文件表中反查所在文件，供路由感知渲染定位页面入口
+  // 路由组件定位：优先按声明文件中的 import 相对路径解析（不受 import 重命名/同名组件干扰），
+  // 解析失败再按组件名在文件表中反查兜底
   const routes: RouteEntry[] = validParsed
     .flatMap((item) => item.routes)
-    .map((route) => ({
+    .map(({ importSource, ...route }) => ({
       ...route,
-      filePath: files.find((file) => file.components.includes(route.componentName))?.filePath
+      filePath:
+        resolveRouteFileByImport(route.sourceFilePath, importSource, files) ??
+        files.find((file) => file.components.includes(route.componentName))?.filePath
     }));
 
   return {
@@ -107,10 +115,12 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
   });
 
   const imports = new Set<string>();
+  /** import 的本地名 -> 来源模块路径，用于解析路由组件的真实文件 */
+  const importSources = new Map<string, string>();
   const exports = new Set<string>();
   const components = new Set<string>();
   const facts: LogicFact[] = [];
-  const routesFound: Omit<RouteEntry, "filePath">[] = [];
+  const routesFound: ParsedRoute[] = [];
 
   const addFact = (
     type: LogicFactType,
@@ -162,6 +172,9 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
   traverse(ast, {
     ImportDeclaration(pathRef) {
       imports.add(pathRef.node.source.value);
+      for (const specifier of pathRef.node.specifiers) {
+        importSources.set(specifier.local.name, pathRef.node.source.value);
+      }
     },
     ExportNamedDeclaration(pathRef) {
       for (const specifier of pathRef.node.specifiers) {
@@ -343,12 +356,14 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
         });
       }
     },
-    // 路由抽取一：配置对象数组形式，如 { path: "/orders", name: "订单列表", component: OrderList }
+    // 路由抽取一：配置对象数组形式，如 { path: "/orders", name: "订单列表", component: OrderList }；
+    // 相对 path（嵌套子路由）仅在 children/routes 数组等路由上下文中接受，避免普通配置对象误报
     ObjectExpression(pathRef) {
-      const route = routeFromObject(pathRef.node);
+      const route = routeFromObject(pathRef.node, isInRouteContext(pathRef));
       if (route) {
         routesFound.push({
           ...route,
+          importSource: importSources.get(route.componentName),
           sourceFilePath: filePath,
           line: pathRef.node.loc?.start.line ?? 1
         });
@@ -360,6 +375,7 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
       if (route) {
         routesFound.push({
           ...route,
+          importSource: importSources.get(route.componentName),
           sourceFilePath: filePath,
           line: pathRef.node.loc?.start.line ?? 1
         });
@@ -381,9 +397,13 @@ export function parseFile(project: ProjectConfig, filePath: string, code: string
   };
 }
 
-/** 从配置对象中识别路由：要求 path 为 "/" 开头的字符串字面量，且有 component/element 指向组件 */
+/**
+ * 从配置对象中识别路由：要求 path 为字符串字面量且有 component/element 指向组件。
+ * 绝对路径（"/" 开头）直接接受；相对路径（嵌套子路由）仅在路由上下文中接受。
+ */
 function routeFromObject(
-  node: t.ObjectExpression
+  node: t.ObjectExpression,
+  allowRelativePath: boolean
 ): Pick<RouteEntry, "routePath" | "name" | "componentName"> | null {
   let routePath: string | undefined;
   let name: string | undefined;
@@ -392,8 +412,9 @@ function routeFromObject(
   for (const property of node.properties) {
     if (!t.isObjectProperty(property) || !t.isIdentifier(property.key)) continue;
     const key = property.key.name;
-    if (key === "path" && t.isStringLiteral(property.value) && property.value.value.startsWith("/")) {
-      routePath = property.value.value;
+    if (key === "path" && t.isStringLiteral(property.value)) {
+      const value = property.value.value;
+      if (value.startsWith("/") || allowRelativePath) routePath = value;
     }
     if (key === "name" && t.isStringLiteral(property.value)) {
       name = property.value.value;
@@ -405,6 +426,29 @@ function routeFromObject(
 
   if (!routePath || !componentName) return null;
   return { routePath, name, componentName };
+}
+
+/**
+ * 判断对象是否位于路由上下文：所在数组挂在 children/routes 属性下，
+ * 或赋值给名字含 route 的变量（如 export const routes = [...]）。
+ */
+function isInRouteContext(pathRef: NodePath<t.ObjectExpression>): boolean {
+  const arrayPath = pathRef.parentPath;
+  if (!arrayPath?.isArrayExpression()) return false;
+
+  const owner = arrayPath.parentPath;
+  if (
+    owner?.isObjectProperty() &&
+    t.isIdentifier(owner.node.key) &&
+    /^(children|routes)$/i.test(owner.node.key.name)
+  ) {
+    return true;
+  }
+  if (owner?.isVariableDeclarator()) {
+    const name = variableName(owner.node.id);
+    return Boolean(name && /route/i.test(name));
+  }
+  return false;
 }
 
 /** 从 <Route path="..." element={<X/>}/> 中识别路由 */
@@ -438,6 +482,30 @@ function componentNameFromValue(node: t.Node): string | undefined {
     return node.openingElement.name.name;
   }
   return undefined;
+}
+
+/** 按路由声明文件中的 import 相对路径解析组件所在文件（匹配补全扩展名与 index 约定） */
+function resolveRouteFileByImport(
+  sourceFilePath: string,
+  importSource: string | undefined,
+  files: IndexedFile[]
+): string | undefined {
+  if (!importSource || !importSource.startsWith(".")) return undefined;
+  const base = path.posix.normalize(
+    path.posix.join(path.posix.dirname(toPosix(sourceFilePath)), importSource)
+  );
+  return files.find((file) => {
+    const candidate = toPosix(file.filePath);
+    return (
+      candidate === base ||
+      candidate.replace(/\.[^./]+$/, "") === base ||
+      candidate.replace(/\/index\.[^./]+$/, "") === base
+    );
+  })?.filePath;
+}
+
+function toPosix(value: string): string {
+  return value.split(path.sep).join("/");
 }
 
 /** 向上找最近的具名函数（不限组件大写命名），用于把接口调用归属到 service 函数 */

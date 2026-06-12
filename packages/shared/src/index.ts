@@ -103,7 +103,7 @@ export type InteractionFlow = {
  * 索引结构版本号：新增字段（flows/routes/enclosingFunction 等）时 +1，
  * 读取到旧版本索引的调用方应触发重建。
  */
-export const INDEX_SCHEMA_VERSION = 2;
+export const INDEX_SCHEMA_VERSION = 3;
 
 /** 路由表条目：从 <Route path element> 或 routes 配置对象数组中抽取 */
 export type RouteEntry = {

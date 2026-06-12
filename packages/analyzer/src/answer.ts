@@ -4,7 +4,7 @@ import {
   buildApiInventory,
   formatApiInventory,
   isApiInventoryQuestion,
-  type PageApiGroup
+  type ApiInventoryResult
 } from "./inventory";
 import { retrieveFacts } from "./retrieval";
 
@@ -13,7 +13,10 @@ export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAn
   const factFiles = facts.map((fact) => fact.filePath);
   const flows = matchFlows(index, question, factFiles);
   // 接口清单类问题：从全量事实聚合（不受检索 limit 截断），并按问题中的页面线索过滤
-  const inventory = isApiInventoryQuestion(question) ? buildApiInventory(index, question) : [];
+  const inventoryResult: ApiInventoryResult = isApiInventoryQuestion(question)
+    ? buildApiInventory(index, question)
+    : { groups: [], pageMatched: false };
+  const inventory = inventoryResult.groups;
   const confidence = confidenceFromFacts(facts, diagnostics.matchedFacts);
   const relatedFiles = Array.from(
     new Set([
@@ -34,12 +37,14 @@ export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAn
   return {
     question,
     conclusion:
-      inventoryConclusion(inventory) ??
+      inventoryConclusion(inventoryResult) ??
       flowConclusion(question, flows) ??
       conclusionFor(question, facts, diagnostics.matchedFacts),
     confidence:
       inventory.length > 0
-        ? "high"
+        ? inventoryResult.pageMatched
+          ? "high"
+          : "medium"
         : flows.length > 0 && isFlowQuestion(question) && bestFlowConfidence === "high"
           ? "high"
           : confidence,
@@ -94,10 +99,16 @@ export function buildLocalAnswer(index: ProjectIndex, question: string): LogicAn
   };
 }
 
-/** 接口清单类问题命中时，生成汇总结论 */
-function inventoryConclusion(inventory: PageApiGroup[]): string | null {
+/** 接口清单类问题命中时，生成汇总结论；未定位到页面时如实说明并回退全项目清单 */
+function inventoryConclusion(result: ApiInventoryResult): string | null {
+  const inventory = result.groups;
   if (inventory.length === 0) return null;
   const totalApis = inventory.reduce((sum, group) => sum + group.apis.length, 0);
+
+  if (!result.pageMatched) {
+    return `没有从问题中定位到具体页面，以下是全项目接口清单：${inventory.length} 个文件共 ${totalApis} 类接口调用。如需查具体页面，可带上页面名、组件名或路由名再问。`;
+  }
+
   const scope =
     inventory.length === 1
       ? `${inventory[0].filePath}${

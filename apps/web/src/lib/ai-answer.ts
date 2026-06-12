@@ -35,7 +35,9 @@ export async function* streamAnswer(
   const useGateway = process.env.AI_MODE === "gateway" && facts.length > 0;
   const model = process.env.AI_MODEL || "deepseek-chat";
   const flows = matchFlows(index, question, facts.map((fact) => fact.filePath), 4);
-  const inventory = isApiInventoryQuestion(question) ? buildApiInventory(index, question) : [];
+  const inventory = isApiInventoryQuestion(question)
+    ? buildApiInventory(index, question)
+    : { groups: [], pageMatched: false };
   const evidence = buildEvidence(facts) + buildFlowEvidence(flows) + buildInventoryEvidence(inventory);
 
   // 1) 先下发调用详情，面板可在思考开始前就展示模型/查询词/命中情况
@@ -133,8 +135,13 @@ function buildFlowEvidence(flows: InteractionFlow[]): string {
 
 /** 接口清单类问题：把按页面聚合、已解析 service 封装的接口清单附进证据 */
 function buildInventoryEvidence(inventory: ReturnType<typeof buildApiInventory>): string {
-  if (inventory.length === 0) return "";
-  return `\n\n接口清单（按文件聚合，service 封装已解析为真实 URL）：\n${formatApiInventory(inventory).join("\n")}`;
+  if (inventory.groups.length === 0) return "";
+  const note = inventory.pageMatched
+    ? "已按问题中的页面线索过滤"
+    : "未定位到具体页面，为全项目清单，回答时请如实说明";
+  return `\n\n接口清单（按文件聚合，service 封装已解析为真实 URL；${note}）：\n${formatApiInventory(
+    inventory.groups
+  ).join("\n")}`;
 }
 
 /** 把命中的逻辑事实压成喂给模型的证据文本。 */
