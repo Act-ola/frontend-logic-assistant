@@ -101,11 +101,11 @@ export type LogicAnswer = {
  * /api/ask 流式响应的事件协议（按 NDJSON 逐行传输）。
  * - trace：开始时下发的调用详情元信息（模型、查询词、命中事实数等）
  * - reasoning：AI 思考过程增量，前端逐字追加
- * - answer：思考结束后的完整答案（结论、预览等）
+ * - answer：思考结束后的完整答案（结论等）
  * - error：异常信息
  */
 export type AskStreamEvent =
-  | { type: "trace"; trace: AnswerTrace; facts: LogicFact[]; evidence: EvidenceRef[] }
+  | { type: "trace"; trace: AnswerTrace }
   | { type: "reasoning"; delta: string }
   | { type: "answer"; answer: LogicAnswer }
   | { type: "error"; message: string };
